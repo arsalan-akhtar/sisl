@@ -441,17 +441,21 @@ class SiestaBarriersBaseNick:
 
     """
 
-    def __init__(self, images, path='image_{index}_{total}'):
+    #def __init__(self, images , path='image_{index}_{total}',neb_path='neb'):
+    def __init__(self, neb_path , images , path='image'):
         # Store all images in the class, convert to sisl.Geometry
         self.images = [Geometry.new(image) for image in images]
         # we need to have at least initial and final
         # While it doesn't make sense to calculate barriers for
         # two points, it might be useful for setting up initial and final
         # geometries in specific directories.
-        assert len(self.images) >= 2
+        #assert len(self.images) >= 2
+        assert len(self.images) >= 1
 
         if isinstance(path, str):
             path = pathlib.Path(path)
+        if isinstance(neb_path,str):
+            neb_path = pathlib.Path(neb_path)
 
         if callable(path):
             def _path(image, index, total):
@@ -459,10 +463,12 @@ class SiestaBarriersBaseNick:
         elif isinstance(path, pathlib.Path):
             # Convert to func
             def _path(image, index, total):
-                return path.with_suffix(path.suffix + f"_{index}_{total}")
+                #return path.with_suffix(path.suffix + f"._{index}_{total}")
+                return path.with_suffix(path.suffix + f".{index}_{total}")
         else:
             raise ValueError("Unknown argument type for 'path' not one of [callable, str, Path]")
         self.path = _path
+        self.neb_path = neb_path
 
         # do you really need a welcome?
         # Users presumably know that they will use this script, and seeing this
@@ -490,6 +496,7 @@ class SiestaBarriersBaseNick:
         print ("---------------------------")
 
     def _prepare_flags(self, files, overwrite):
+        total = len(self.images)
         if isinstance(files, str):
             files = [files]
         if isinstance(overwrite, bool):
@@ -521,8 +528,10 @@ class SiestaBarriersBaseNick:
         for index, (overwrite, image) in enumerate(zip(overwrite, self.images)):
             path = self.path(image, index, total)
             path.mkdir(parents=True, exist_ok=True)
+            print(path)
             # prepare the directory
             for file in files:
+                print(file)
                 file = path / file.format(index=index, total=total)
                 if overwrite or not file.is_file():
                     # now write geometry
@@ -537,12 +546,81 @@ class SiestaBarriersBaseNick:
     # This does not make sense and it might be much better to have a simpler
     # class that is easier to maintain.
 
+    #def prepare_neb(self,files='image',overwrite=False):
+    def prepare_neb(self,image_name='image',fdf_name='input',overwrite=False):
+        """
+        """
+        total = len(self.images)
+        #neb_path = self.neb_path 
+        neb_path = self.neb_path.with_suffix( f".{self.number_of_images}i" )
+        print(neb_path)
+        #path.mkdir(parents=True,exist_ok=True)
+        neb_path.mkdir(exist_ok = False)
+
+        #files, overwrite = self._prepare_flags(files, overwrite)
+        files, overwrite = self._prepare_flags(image_name, overwrite)
+        print(files)
+        print(overwrite)
+        
+        #assert len(overwrite) == total
+        for index, (overwrite, image) in enumerate(zip(overwrite, self.images)):
+            print(index,overwrite)
+            #file_name = ['image-' + str(index)+'.xyz']
+            file_name = [image_name +'-' + str(index)+'.xyz']
+            print (file_name)
+            for file in file_name:
+                file = neb_path / file.format(index=index,total=total)
+                print(file)
+                if overwrite or not file.is_file():
+                    # now write geometry
+                    image.write(file)
+       
+        fdf_file_name = [fdf_name+'.fdf']
+        index = 0
+        image = self.images[index]
+        for file in fdf_file_name:
+            file = neb_path / file.format(index = index, total = total)
+            print(file)
+            image.write(file)
+
 
 # The ManualNEB is simple the same as the base class (now)
 # It may need some adjustments later.
-class ManualNEB(SiestaBarriersBaseNick):
-    pass
 
+class ManualNEB(SiestaBarriersBaseNick):
+    """
+    """
+    def __init__(self,initial_structure,final_structure,number_of_images,interpolation_method  ,neb_path ,path='image' ):
+
+        super().__init__(neb_path, path='image',images = [initial_structure])
+
+        self.initial_structure = initial_structure 
+        self.final_structure = final_structure 
+        self.number_of_images = number_of_images
+        self.interpolation_method = interpolation_method
+    
+    def prepare_manual_images(self):
+        """
+        """
+        
+        from ase.neb import NEB
+        import sisl
+        initial = sisl.Geometry.toASE(self.initial_structure)
+        final = sisl.Geometry.toASE(self.final_structure)
+
+        images_ASE = [initial]
+        print ("Copying ASE For NEB Image 0 (initial)")
+        for i in range(self.number_of_images):
+            print ("Copying ASE For NEB Image ",i+1)
+            images_ASE.append(initial.copy())
+        images_ASE.append(final)
+        print ("Copying ASE For NEB Image ",i+2, 'final')
+        self.neb = NEB(images_ASE)
+        self.neb.interpolate(self.interpolation_method,mic=True)
+       
+        self.images = []
+        for i in range(self.number_of_images+2):
+            self.images.append(sisl.Geometry.fromASE(images_ASE[i]))
 
 # It isn't clear at all how a user should use your scripts.
 # Perhaps I should refrain from commenting more and you should
