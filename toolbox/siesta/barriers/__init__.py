@@ -15,9 +15,10 @@
 
 
 
-from .BarriersBase import *
-from .vacancy_exchange import *
-from .manual import *
-from .exchange import *
-from .kick import *
-from .interstitial import *
+from .barriers import *
+#from .BarriersBase import *
+#from .vacancy_exchange import *
+#from .manual import *
+#from .exchange import *
+#from .kick import *
+#from .interstitial import *

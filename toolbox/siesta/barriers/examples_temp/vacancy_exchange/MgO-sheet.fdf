@@ -1,0 +1,109 @@
+#The Lattice exp: J. Chem. Phys., Vol. 117, No. 6, 8 August 2002 
+#===============================================================
+SystemName      (MgO) 
+SystemLabel MgO
+NumberOfSpecies 2
+NumberOfAtoms 18
+%block ChemicalSpeciesLabel
+      1      12   Mg 
+      2       8     O
+      3       -8     O_ghost
+%endblock ChemicalSpeciesLabel
+
+
+LatticeConstant 1.0 Ang
+%block LatticeVectors
+   9.9678210000    0.0000000000    0.0000000000
+  -4.9839090000    8.6323860000    0.0000000000
+   0.0000000000    0.0000000000   35.0000000000
+%endblock LatticeVectors
+AtomicCoordinatesFormat  Fractional
+%block AtomicCoordinatesAndAtomicSpecies
+     0.222222222     0.111111111     0.500000000    1  1   Mg
+     0.111111111     0.222222222     0.500000000    2  2   O
+     0.888888889     0.777777778     0.500000000    1  3   Mg
+     0.777777778     0.888888889     0.500000000    3  4   O
+     0.555555555     0.777777778     0.500000000    1  5   Mg
+     0.444444444     0.888888889     0.500000000    2  6   O
+     0.222222222     0.777777778     0.500000000    1  7   Mg
+     0.111111111     0.888888889     0.500000000    2  8   O  
+     0.888888889     0.444444444     0.500000000    1  9   Mg
+     0.777777778     0.555555555     0.500000000    2  10  O
+     0.555555555     0.444444444     0.500000000    1  11  Mg
+     0.444444444     0.555555555     0.500000000    2  12  O 
+     0.222222222     0.444444444     0.500000000    1  13  Mg
+     0.111111111     0.555555555     0.500000000    2  14  O
+     0.888888889     0.111111111     0.500000000    1  15  Mg
+     0.777777778     0.222222222     0.500000000    2  16  O
+     0.555555555     0.111111111     0.500000000    1  17  Mg
+     0.444444444     0.222222222     0.500000000    2  18  O
+%endblock AtomicCoordinatesAndAtomicSpecies
+%block PAO.Basis 
+Mg   4      0.04671
+n=2   0   1   E    22.36384     0.28509
+     3.47661
+     1.00000
+n=3   0   2   E    10.10988     0.99154
+     3.46833     1.25785
+     1.00000     1.00000
+n=2   1   2   E     2.89494     1.12196
+     3.93864     1.05729
+     1.00000     1.00000
+n=3   1   1   E    77.17311     1.04265
+     4.39039
+     1.00000
+O    3     -0.49820
+n=2   0   2   E     3.77977     0.09673
+     4.74747     2.11057
+     1.00000     1.00000
+n=3   0   1   E     5.24950     0.27857
+     4.37690
+     1.00000
+n=2   1   2   E     2.98223     1.27650
+     7.24547     3.33329
+     1.00000     1.00000
+%endblock PAO.Basis
+
+
+XC.Functional   GGA
+XC.Authors     PBE
+%block kgrid_Monkhorst_Pack
+   4  0  0  0.5
+   0  4  0  0.5
+   0  0   1  0.5
+%endblock kgrid_Monkhorst_Pack
+
+MeshCutoff             800 Ry
+DM.NumberPulay         3
+DM.UseSaveDM           .true. 
+SCF.Mixer.weight       0.1
+SCF.Mix                 density
+SCF.Mixer.kick         35
+DM.Tolerance           1.d-4       # Tolerance in maximum difference
+MaxSCFIterations       500
+MD.TypeOfRun            cg          # Type of dynamics:
+MD.NumCGsteps           100           # Number of CG steps for
+MD.MaxCGDispl           0.3 Bohr    # Maximum atomic displacement
+MD.MaxForceTol         0.01 eV/Ang  # Tolerance in the maximum
+MD.VariableCell        .true.
+MD.UseSaveXV           .true. 
+MD.UseSaveCG           .true.
+WriteCoorXmol          .true.       # Writing Ang Coordinate in systemlabel.xyz
+
+
+BandLinesScale ReciprocalLatticeVectors
+%block BandLines
+  1  0.000000  0.000000  0.000000 \Gamma
+ 50  0.500000  0.000000  0.000000 M
+ 50  0.333333  0.333333  0.000000 K
+ 50  0.000000  0.000000  0.000000 \Gamma
+ 50  0.000000  0.000000  0.500000 A
+ 50  0.500000  0.000000  0.500000 L
+ 50  0.333333  0.333333  0.500000 H
+ 50  0.000000  0.000000  0.500000 A
+ 50  0.500000  0.000000  0.500000 L
+ 50  0.500000  0.000000  0.000000 M
+ 50  0.333333  0.333333  0.000000 K
+ 50  0.333333  0.333333  0.500000 H
+%endblock BandLines
+

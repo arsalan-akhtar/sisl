@@ -1,0 +1,95 @@
+#===============================================================
+
+XC.Functional   GGA
+XC.Authors     PBEsol
+SpinPolarized  .True.
+
+%block PAO.Basis  
+Mg   4      0.06107
+n=2   0   2   E    36.57430     0.16437
+     4.02726     2.35629
+     1.00000     1.00000
+n=3   0   2   E     4.35674     0.35095
+     4.92827     2.70680
+     1.00000     1.00000
+n=2   1   2   E    11.52942     0.01100
+     4.05002     2.04492
+     1.00000     1.00000
+n=3   1   1   E     7.89794     0.25793
+     5.14217
+     1.00000
+Mg_ghost   4      0.06107
+n=2   0   2   E    36.57430     0.16437
+     4.02726     2.35629
+     1.00000     1.00000
+n=3   0   2   E     4.35674     0.35095
+     4.92827     2.70680
+     1.00000     1.00000
+n=2   1   2   E    11.52942     0.01100
+     4.05002     2.04492
+     1.00000     1.00000
+n=3   1   1   E     7.89794     0.25793
+     5.14217
+     1.00000
+O    3     -1.08034
+n=2   0   2   E     7.38438     0.00272
+     4.61431     2.00816
+     1.00000     1.00000
+n=2   1   2   E     7.17246     1.02667
+     6.02248     2.04008
+     1.00000     1.00000
+n=3   2   1   E     4.04758     1.01840
+     4.44127
+     1.00000
+ O_ghost    3     -1.08034
+ n=2   0   2   E     7.38438     0.00272
+      3.61431     1.00816
+ 1.00000     1.00000
+ n=2   1   2   E     7.17246     1.02667
+      5.02248     1.04008
+      1.00000     1.00000
+ n=3   2   1   E     4.04758     1.01840
+ 3.44127
+ 1.00000
+O_i    3     -1.08034
+n=2   0   2   E     7.38438     0.00272
+     4.61431     2.00816
+     1.00000     1.00000
+n=2   1   2   E     7.17246     1.02667
+     6.02248     2.04008
+     1.00000     1.00000
+n=3   2   1   E     4.04758     1.01840
+     4.44127
+     1.00000
+
+%endblock PAO.Basis
+
+%block kgrid_Monkhorst_Pack
+   1  0  0  0.0
+   0  1  0  0.0
+   0  0  1  0.0
+%endblock kgrid_Monkhorst_Pack
+
+MeshCutoff             250 Ry
+DM.MixingWeight        0.1
+DM.NumberPulay         3
+SCF.Mixer.Weight       0.1
+SCF.Mix                density  #Hamiltonian
+SCF.Mixer.Kick         35
+#SCF.Mixer.History      6
+DM.UseSaveDM            .true.
+DM.Tolerance            1.0d-4
+MaxSCFIterations        500
+MD.TypeOfRun           CG          # Type of dynamics:
+LUA.SCript   relax_geometry_lbfgs.lua 
+MD.NumCGsteps          150          # Number of CG steps for
+MD.MaxCGDispl          0.3 Bohr    # Maximum atomic displacement
+MD.MaxForceTol         0.04 eV/Ang  # Tolerance in the maximum
+MD.MaxStressTol        0.1 GPa 
+MD.UseSaveXV           yes
+MD.UseSaveCG           yes
+WriteCoorXmol          yes
+
+
+
+
