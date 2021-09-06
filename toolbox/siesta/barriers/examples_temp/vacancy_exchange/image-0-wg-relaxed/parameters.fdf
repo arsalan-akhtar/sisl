@@ -47,11 +47,11 @@ XC.Functional  GGA
 XC.Authors  PBEsol
 SpinPolarized  .true. 
 %block kgrid_Monkhorst_Pack
-  2  0  0  0.0
-  0  2  0  0.0
+  4  0  0  0.0
+  0  4  0  0.0
   0  0  1  0.0
 %endblock kgrid_Monkhorst_Pack
-MeshCutoff  150  Ry
+MeshCutoff  650  Ry
 DM.NumberPulay  3
 DM.UseSaveDM  True
 DM.History.Depth  0

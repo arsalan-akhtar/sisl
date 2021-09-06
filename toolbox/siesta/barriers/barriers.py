@@ -8,8 +8,11 @@
 import pathlib
 import shutil , os
 from .utils_barriers import plot_barrier,constraint_parameters_block,file_cat
-from .utils_barriers import finding_atom_position_index, prepare_ase_for_vacancy_exchange
+from .utils_barriers import finding_atom_position_index
+from .utils_barriers import prepare_ase_for_relaxed
+from .utils_barriers import prepare_ase_for_vacancy_exchange
 from .utils_barriers import prepare_ase_for_interstitial 
+from .utils_barriers import prepare_ase_for_kick
 from sisl import Geometry
 import sisl
 __author__ = "Arsalan Akhatar"
@@ -62,8 +65,8 @@ class SiestaBarriersBaseNick:
 
     #def __init__(self, neb_path , images , path='image'):
     def __init__(self, 
-                 neb_path , 
-                 images , 
+                 neb_path =None , 
+                 images = None , 
                  path='image',
                  initial_relaxed_path = None,
                  final_relaxed_path = None,
@@ -71,13 +74,16 @@ class SiestaBarriersBaseNick:
                  final_relaxed_fdf_name = None,
                  ):
         # Store all images in the class, convert to sisl.Geometry
-        self.images = [Geometry.new(image) for image in images]
-        # we need to have at least initial and final
-        # While it doesn't make sense to calculate barriers for
-        # two points, it might be useful for setting up initial and final
-        # geometries in specific directories.
-        #assert len(self.images) >= 2
-        assert len(self.images) >= 1
+        self.images = images
+        print(self.images)
+        if self.images is not [None]:
+            self.images = [Geometry.new(image) for image in images]
+            # we need to have at least initial and final
+            # While it doesn't make sense to calculate barriers for
+            # two points, it might be useful for setting up initial and final
+            # geometries in specific directories.
+            #assert len(self.images) >= 2
+            assert len(self.images) >= 1
 
         if isinstance(path, str):
             path = pathlib.Path(path)
@@ -221,14 +227,27 @@ class SiestaBarriersBaseNick:
         shutil.copy(self.initial_relaxed_path/initial_systemlabel,neb_path/'NEB.DM.0')
         shutil.copy(self.final_relaxed_path/final_systemlabel,neb_path/f'NEB.DM.{self.number_of_images+1}')
         
-
-    def plot_neb_results(self,neb_results_folder_name=''):
+    
+    
+    def plot_neb_results(self):
         """
         """
         neb_results_path = self.neb_path / neb_results_folder_name
         print("DEBUG",neb_results_path)
         if neb_results_path.exists():
             plot_barrier(neb_results_path,self.number_of_images,fig_name='NEB',dpi_in=600)
+        else:
+            raise FileNotFoundError("The Folder doesn't Exists")
+
+    @staticmethod
+    def plot_neb_results_from_file(neb_results_folder_name=''):
+        """
+        """
+        
+        neb_results_path = pathlib.Path( neb_results_folder_name)
+        print("DEBUG",neb_results_path)
+        if neb_results_path.exists():
+            plot_barrier(neb_results_path,fig_name='NEB',dpi_in=600)
         else:
             raise FileNotFoundError("The Folder doesn't Exists")
 
@@ -250,7 +269,7 @@ class SiestaBarriersBaseNick:
         """
         """
         self.initial_relaxed_path = pathlib.Path('image-0')
-        self.final_relaxed_path = pathlib.Path(f'image-{self.number_of_images+2}')
+        self.final_relaxed_path = pathlib.Path(f'image-{self.number_of_images+1}')
         self.initial_relaxed_path.mkdir()
         self._initial.write(self.initial_relaxed_path/self.initial_relaxed_fdf_name )
         constraint_parameters_block(self._initial,self.initial_relaxed_path)
@@ -275,10 +294,10 @@ class ManualNEB(SiestaBarriersBaseNick):
     """
     """
     def __init__(self,
-                 initial_structure,
-                 final_structure,
-                 number_of_images,
-                 interpolation_method  ,
+                 initial_structure = None,
+                 final_structure = None,
+                 number_of_images = None,
+                 interpolation_method = 'idpp' ,
                  neb_path= 'neb' ,
                  path='image',
                  initial_relaxed_path = '',
@@ -423,9 +442,9 @@ class VacancyExchangeNEB(SiestaBarriersBaseNick):
                 raise FileNotFoundError("intial/final relaxed fdf not provided")
             self.initial_structure = sisl.get_sile(self.initial_relaxed_path/ self.initial_relaxed_fdf_name).read_geometry(output=True)
             self.final_structure = sisl.get_sile(self.final_relaxed_path/ self.final_relaxed_fdf_name).read_geometry(output=True)
-            self.__initial = sisl.Geometry.toASE(self.initial_structure)
-            self.__final = sisl.Geometry.toASE(self.final_structure)
- 
+            self.__info = prepare_ase_for_relaxed(self.initial_structure,self.final_structure,self.ghost)
+            self.__initial  = self.__info['initial']
+            self.__final  = self.__info['final']
         
         else:
              print ("=================================================")
@@ -437,13 +456,6 @@ class VacancyExchangeNEB(SiestaBarriersBaseNick):
              self.__initial  = self.__info['initial']
              self.__final  = self.__info['final']
     
-    #@property
-    #def initial_relaxed_path(self):
-        #"""
-        #"""
-        #self._initial_relaxed_path = pathlib.Path(self.initial_relaxed_path)
-        #return pathlib.Path(self.initial_relaxed_path)
-
 
     def prepare_vacancy_exchange_images(self):
         """
@@ -466,7 +478,7 @@ class VacancyExchangeNEB(SiestaBarriersBaseNick):
         for i in range(self.number_of_images+2):
             self.images.append(sisl.Geometry.fromASE(images_ASE[i]))
 
-        if self.ghost == True and self.relaxed is not True:
+        if self.ghost == True: #and self.relaxed is not True:
             for i in range(self.number_of_images+2):
                 print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
                 self.images[i] = self.images[i].add(self.__info['ghost_initial'])
@@ -489,26 +501,6 @@ class VacancyExchangeNEB(SiestaBarriersBaseNick):
         if self.relaxed :
             self.fdf_image = self.initial_structure
 
-    #def prepare_endpoint_relaxation(self):
-    #    """
-    #    """
-    #    self.initial_relaxed_path = pathlib.Path('image-0')
-    #    self.final_relaxed_path = pathlib.Path(f'image-{self.number_of_images+2}')
-    #    self.initial_relaxed_path.mkdir()
-    #    self._initial.write(self.initial_relaxed_path/self.initial_relaxed_fdf_name )
-    #    constraint_parameters_block(self._initial,self.initial_relaxed_path)
-    #    file_cat(self.initial_relaxed_path /self.initial_relaxed_fdf_name ,
-    #             self.initial_relaxed_path /'ghost_block_temp',
-    #             self.initial_relaxed_path/self.initial_relaxed_fdf_name  )
-    #    os.remove(self.initial_relaxed_path /'ghost_block_temp')
-   #
-   #     self.final_relaxed_path.mkdir()
-   #     self._final.write(self.final_relaxed_path/self.final_relaxed_fdf_name )
-   #     constraint_parameters_block(self._final,self.final_relaxed_path)
-   #     file_cat(self.final_relaxed_path /self.final_relaxed_fdf_name ,
-   #              self.final_relaxed_path /'ghost_block_temp',
-   #              self.final_relaxed_path/self.final_relaxed_fdf_name  )
-   #     os.remove(self.final_relaxed_path /'ghost_block_temp')
 
 class InterstitialNEB(SiestaBarriersBaseNick):
     """
@@ -518,7 +510,7 @@ class InterstitialNEB(SiestaBarriersBaseNick):
             initial_atom_position,
             final_atom_position,
             number_of_images,
-            interpolation_method,
+            interpolation_method = 'idpp',
             initial_relaxed_path = '',
             final_relaxed_path = '',
             initial_relaxed_fdf_name = 'input.fdf',
@@ -559,6 +551,7 @@ class InterstitialNEB(SiestaBarriersBaseNick):
                 raise FileNotFoundError("intial/final relaxed fdf not provided")
             self.initial_structure = sisl.get_sile(self.initial_relaxed_path/ self.initial_relaxed_fdf_name).read_geometry(output=True)
             self.final_structure = sisl.get_sile(self.final_relaxed_path/ self.final_relaxed_fdf_name).read_geometry(output=True)
+            self.__info = prepare_ase_for_relaxed(self.initial_structure,self.final_structure,self.ghost)
             self.__initial = sisl.Geometry.toASE(self.initial_structure)
             self.__final = sisl.Geometry.toASE(self.final_structure)
  
@@ -594,7 +587,7 @@ class InterstitialNEB(SiestaBarriersBaseNick):
         for i in range(self.number_of_images+2):
             self.images.append(sisl.Geometry.fromASE(images_ASE[i]))
 
-        if self.ghost == True and self.relaxed is not True:
+        if self.ghost : #== True and self.relaxed is not True:
             for i in range(self.number_of_images+2):
                 print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
                 self.images[i] = self.images[i].add(self.__info['ghost_initial'])
@@ -677,10 +670,13 @@ class KickNEB(SiestaBarriersBaseNick):
              print ("The Initial Kicked Image Generation ...")
              print ("=================================================")
              self.__i_index = finding_atom_position_index(self.pristine_structure , self.initial_atom_position)
-             #self.__f_index = finding_atom_position_index (self.pristine_structure , self.final_vacancy_position)
-             self.__info = prepare_ase_for_interstitial(self.pristine_structure, self.__i_index , self.final_atom_position,self.ghost)
+             self.__f_index = finding_atom_position_index (self.pristine_structure , self.final_atom_position)
+             self.__info = prepare_ase_for_kick(self.pristine_structure, self.__i_index , self.__f_index,self.kicked_atom_final_position,self.ghost)
+            # self.__initial  = self.__info['initial']
+            # self.__final  = self.__info['final']
              self.__initial  = self.__info['initial']
              self.__final  = self.__info['final']
+
 
     def prepare_kick_images(self):
         """
@@ -699,24 +695,32 @@ class KickNEB(SiestaBarriersBaseNick):
         self.neb = NEB(images_ASE)
         self.neb.interpolate(self.interpolation_method,mic=True)
        
+        #self.images = []
+        #for i in range(self.number_of_images+2):
+        #    temp = sisl.Geometry.fromASE(self.images[i])
+        #    self.sisl_images.append(FixingSislImages(self.test['initial'], temp,"ghost",self.relaxed))
+
+
         self.images = []
         for i in range(self.number_of_images+2):
             self.images.append(sisl.Geometry.fromASE(images_ASE[i]))
 
-        if self.ghost == True and self.relaxed is not True:
-            for i in range(self.number_of_images+2):
-                print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
-                self.images[i] = self.images[i].add(self.__info['ghost_initial'])
-                print(f" Adding Ghost for image {i} in Sisl Geometry Object for final ")
-                self.images[i] = self.images[i].add(self.__info['ghost_final'])
+        
 
-        # This is may be! a new feature, i am still testing it though!
-        if self.moving == True and self.relaxed is not True:
-            for i in range(self.number_of_images+2):
-                if self.ghost:
-                    self.images[i].atom[-3] = sisl.Atom(Z = self.images[i].atom[-3].Z,tag=self.images[i].atoms[-3].symbol+"_moving")
-                else:
-                    self.images[i].atom[-1] = sisl.Atom(Z = self.images[i].atom[-1].Z,tag=self.images[i].atoms[-1].symbol+"_moving")
+        #if self.ghost == True and self.relaxed is not True:
+        #    for i in range(self.number_of_images+2):
+        #        print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
+        #        self.images[i] = self.images[i].add(self.__info['ghost_initial'])
+        #        print(f" Adding Ghost for image {i} in Sisl Geometry Object for final ")
+        #        self.images[i] = self.images[i].add(self.__info['ghost_final'])
+
+        ## This is may be! a new feature, i am still testing it though!
+        #if self.moving == True and self.relaxed is not True:
+        #    for i in range(self.number_of_images+2):
+        #        if self.ghost:
+        #            self.images[i].atom[-3] = sisl.Atom(Z = self.images[i].atom[-3].Z,tag=self.images[i].atoms[-3].symbol+"_moving")
+        #        else:
+        #            self.images[i].atom[-1] = sisl.Atom(Z = self.images[i].atom[-1].Z,tag=self.images[i].atoms[-1].symbol+"_moving")
 
         if self.relaxed is not True:
             self.fdf_image = self.images[0]

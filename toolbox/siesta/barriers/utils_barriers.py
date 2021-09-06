@@ -1,7 +1,7 @@
 #------------------------------------------------------
 # Function for Plotting the NEB results
 #-----------------------------------------------------
-def plot_barrier(NEBfolder,image_number,fig_name,dpi_in ):
+def plot_barrier(NEBfolder,fig_name,dpi_in ):
     """
     #==========================================================================
     "Plotting NEB"
@@ -19,10 +19,14 @@ def plot_barrier(NEBfolder,image_number,fig_name,dpi_in ):
     print ("*******************************************************************")
     print ("Plotting NEB...! ")
     print ("*******************************************************************")
-    Number_of_images = image_number
+
 
     NAME_OF_NEB_RESULTS = NEBfolder / 'NEB.results'
+    neb_r = np.loadtxt(NAME_OF_NEB_RESULTS)
+    Number_of_images = int( neb_r[:,0].max()-1)
+    print(f"DEBUG: {Number_of_images}")
     data=[]
+
     with open(NAME_OF_NEB_RESULTS) as f:
         for ind, line in enumerate(f, 1):
             if ind>2:
@@ -285,6 +289,39 @@ def prepare_ase_for_vacancy_exchange(initial_geometry,
 
     return info
 
+def prepare_ase_for_relaxed(initial_structure,final_structure,ghost):
+    """
+    """
+    import sisl
+    if ghost:
+        initial_ghost_Z = sisl.AtomGhost(initial_structure.atoms.Z[-2])
+        ghost_initial = sisl.Geometry(initial_structure.xyz[-2],
+                                          atoms= sisl.AtomGhost( initial_ghost_Z.Z , tag="V_"+initial_ghost_Z.symbol+"_ghost"))
+
+        final_ghost_Z = sisl.AtomGhost(final_structure.atoms.Z[-1])
+        ghost_final = sisl.Geometry(final_structure.xyz[-1],
+                                          atoms= sisl.AtomGhost( final_ghost_Z.Z , tag="V_"+final_ghost_Z.symbol+"_ghost"))
+        initial_for_ASE = initial_structure.remove(-2)
+        initial_for_ASE = initial_for_ASE.remove(-1)
+        final_for_ASE = final_structure.remove(-2)
+        final_for_ASE = final_for_ASE.remove(-1)
+        initial_for_ASE = initial_for_ASE.toASE()
+        final_for_ASE = final_for_ASE.toASE()
+
+        info = {'initial': initial_for_ASE,
+                'final' : final_for_ASE,
+                'ghost_initial' : ghost_initial,
+                'ghost_final' : ghost_final}
+    
+    else:
+        initial_for_ASE = initial_structure.toASE()
+        final_for_ASE = final_structure.toASE()
+        info = {'initial': initial_for_ASE,
+                'final' : final_for_ASE}
+
+    
+    return info 
+
 def prepare_ase_for_interstitial(initial_geometry,
                                  initial_vacancy_position_index,
                                  final_vacancy_position,
@@ -321,23 +358,9 @@ def prepare_ase_for_interstitial(initial_geometry,
 
     initial_for_ASE = initial_geometry.remove(initial_vacancy_position_index)
     final_for_ASE = initial_for_ASE 
-    #initial_for_ASE = initial_for_ASE.remove(final_vacancy_position_index-1)
-    #final_for_ASE = final_for_ASE.remove(initial_vacancy_position_index)
 
-    #final_for_ASE =  initial_geometry.remove(final_vacancy_position_index)
-
-    
-    #if (final_vacancy_position_index) > (initial_vacancy_position_index):
-    #        print ("Order : Final Atom Position > Initial Atom Position")
-    #        initial_for_ASE = initial_for_ASE.remove(final_vacancy_position_index-1)
-    #        final_for_ASE = final_for_ASE.remove(initial_vacancy_position_index)
-    #if (final_vacancy_position_index) < (initial_vacancy_position_index):
-    #        print ("Order : Initial Atom Position > Final Atom Position")
-    #        initial_for_ASE = initial_for_ASE.remove(final_vacancy_position_index)
-    #        final_for_ASE = final_for_ASE.remove(initial_vacancy_position_index-1)
-
-    initial_for_ASE = initial_for_ASE.add(trace_atom_final)
-    final_for_ASE = final_for_ASE.add(trace_atom_initial)
+    initial_for_ASE = initial_for_ASE.add(trace_atom_initial)
+    final_for_ASE = final_for_ASE.add(trace_atom_final)
     initial_for_ASE = initial_for_ASE.toASE()
     final_for_ASE = final_for_ASE.toASE()
     if ghost == True:
@@ -354,3 +377,58 @@ def prepare_ase_for_interstitial(initial_geometry,
                 'trace_atom_final' : trace_atom_final}
 
     return info
+
+
+
+def prepare_ase_for_kick(initial_geometry,
+                         initial_vacancy_position_index,
+                         final_vacancy_position_index,
+                         kicked_atom_final_position,
+                         ghost):
+    """
+    """
+    import sisl
+    TraceAtom_A_Initial_Info = sisl.Atom( initial_geometry.atoms.Z[initial_vacancy_position_index])
+    TraceAtom_A_Initial = sisl.Geometry(xyz=initial_geometry.xyz[initial_vacancy_position_index],
+                                           atoms= sisl.Atom(TraceAtom_A_Initial_Info.Z,tag=TraceAtom_A_Initial_Info.symbol                                                  ))
+
+    TraceAtom_A_Final_Info  = sisl.Atom(initial_geometry.atoms.Z[initial_vacancy_position_index ])
+    TraceAtom_A_Final = sisl.Geometry(initial_geometry.xyz[final_vacancy_position_index ],
+                                    atoms= sisl.Atom(TraceAtom_A_Final_Info.Z,tag=TraceAtom_A_Final_Info.symbol))
+
+    TraceAtom_B_Initial_Info = sisl.Atom(initial_geometry.atoms.Z[final_vacancy_position_index])
+    TraceAtom_B_Initial = sisl.Geometry(initial_geometry.xyz[final_vacancy_position_index],
+                                    atoms= sisl.Atom (TraceAtom_B_Initial_Info.Z,tag=TraceAtom_B_Initial_Info.symbol))
+
+    TraceAtom_B_Kicked_Info = sisl.Atom(initial_geometry.atoms.Z[final_vacancy_position_index])
+    TraceAtom_B_Kicked = sisl.Geometry(kicked_atom_final_position,
+                                    atoms= sisl.Atom(TraceAtom_B_Kicked_Info.Z,tag=TraceAtom_B_Kicked_Info.symbol))
+
+
+    initial_for_ASE = initial_geometry.remove(initial_vacancy_position_index)
+    final_for_ASE = initial_geometry.remove(final_vacancy_position_index)
+
+    if final_vacancy_position_index > initial_vacancy_position_index :
+        print ("Order : Final Atom Position > Initial Atom Position")
+        initial_for_ASE = initial_for_ASE.remove(final_vacancy_position_index-1)
+        final_for_ASE = final_for_ASE.remove(initial_vacancy_position_index)
+    if final_vacancy_position_index  < initial_vacancy_position_index :
+        print ("Order : Initial Atom Position > Final Atom Position")
+        initial_for_ASE = initial_for_ASE.remove(final_vacancy_position_index)
+        final_for_ASE = final_for_ASE.remove(initial_vacancy_position_index-1)
+
+    initial_for_ASE = initial_for_ASE.add(TraceAtom_A_Initial)
+    final_for_ASE = final_for_ASE.add(TraceAtom_A_Final)
+
+    info = {'initial': initial_for_ASE,
+            'final':final_for_ASE,
+            'trace_atom_A_initial' : TraceAtom_A_Initial,
+            'trace_atom_A_final' : TraceAtom_A_Final,
+            'trace_atom_B_initial' : TraceAtom_B_Initial,
+            'trace_atom_B_kicked' : TraceAtom_B_Kicked,
+                 }
+
+
+    return info
+            
+
