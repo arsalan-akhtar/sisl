@@ -387,7 +387,21 @@ def prepare_ase_for_kick(initial_geometry,
                          ghost):
     """
     """
+
     import sisl
+    if ghost == True:
+        # For initial vacancy
+        initial_ghost_Z = sisl.AtomGhost(initial_geometry.atoms.Z[initial_vacancy_position_index])
+        ghost_initial = sisl.Geometry(initial_geometry.xyz[initial_vacancy_position_index],
+                                          atoms= sisl.AtomGhost( initial_ghost_Z.Z , tag="V_"+initial_ghost_Z.symbol+"_ghost"))
+
+        # For final vacancy
+        final_ghost_Z = sisl.AtomGhost(initial_geometry.atoms.Z[final_vacancy_position_index])
+        ghost_final = sisl.Geometry(initial_geometry.xyz[final_vacancy_position_index],
+        #ghost_final = sisl.Geometry(xyz= initial_geometry.xyz[final_vacancy_position,
+                                          atoms= sisl.AtomGhost( final_ghost_Z.Z , tag="V_"+final_ghost_Z.symbol+"_ghost"))
+
+
     TraceAtom_A_Initial_Info = sisl.Atom( initial_geometry.atoms.Z[initial_vacancy_position_index])
     TraceAtom_A_Initial = sisl.Geometry(xyz=initial_geometry.xyz[initial_vacancy_position_index],
                                            atoms= sisl.Atom(TraceAtom_A_Initial_Info.Z,tag=TraceAtom_A_Initial_Info.symbol                                                  ))
@@ -419,8 +433,23 @@ def prepare_ase_for_kick(initial_geometry,
 
     initial_for_ASE = initial_for_ASE.add(TraceAtom_A_Initial)
     final_for_ASE = final_for_ASE.add(TraceAtom_A_Final)
+    initial_for_ASE = initial_for_ASE.toASE()
+    final_for_ASE = final_for_ASE.toASE()
+    if ghost:
+        info = {'initial': initial_for_ASE,
+            'final':final_for_ASE,
+            'trace_atom_A_initial' : TraceAtom_A_Initial,
+            'trace_atom_A_final' : TraceAtom_A_Final,
+            'trace_atom_B_initial' : TraceAtom_B_Initial,
+            'trace_atom_B_kicked' : TraceAtom_B_Kicked,
+            'ghost_initial' : ghost_initial,
+            'ghost_final' : ghost_final}
+                 
 
-    info = {'initial': initial_for_ASE,
+
+
+    else:
+        info = {'initial': initial_for_ASE,
             'final':final_for_ASE,
             'trace_atom_A_initial' : TraceAtom_A_Initial,
             'trace_atom_A_final' : TraceAtom_A_Final,

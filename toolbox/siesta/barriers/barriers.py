@@ -15,6 +15,7 @@ from .utils_barriers import prepare_ase_for_interstitial
 from .utils_barriers import prepare_ase_for_kick
 from sisl import Geometry
 import sisl
+import numpy as np
 __author__ = "Arsalan Akhatar"
 __copyright__ = "Copyright 2021, SIESTA Group"
 __version__ = "0.1"
@@ -175,6 +176,32 @@ class SiestaBarriersBaseNick:
     # I.e. you could setup everything, then change the number of images?
     # This does not make sense and it might be much better to have a simpler
     # class that is easier to maintain.
+    def check_images(self,image_folder='images',image_name = 'image', image_format = 'xsf',overwrite=True):
+        """
+        """
+
+        total = len(self.images)
+        image_folder = pathlib.Path(image_folder)
+        print("DEBUG:",image_folder)
+        image_folder.mkdir(parents=True,exist_ok = overwrite)
+
+        #files, overwrite = self._prepare_flags(files, overwrite)
+        files, overwrite = self._prepare_flags(image_name, overwrite)
+        print("DEBUG:",files)
+        print("DEBUG:",overwrite)
+
+        #assert len(overwrite) == total
+        for index, (overwrite, image) in enumerate(zip(overwrite, self.images)):
+            print("DEBUG:",index,overwrite)
+            file_name = [image_name +'-' + str(index)+'.'+image_format]
+            print ("DEBUG:",file_name)
+            for file in file_name:
+                file = image_folder / file.format(index=index,total=total)
+                print("DEBUG:",file)
+                if overwrite or not file.is_file():
+                    # now write geometry
+                    image.write(file)
+
 
     def prepare_neb(self,image_name='image',fdf_name='input',overwrite=False):
         """
@@ -515,7 +542,7 @@ class InterstitialNEB(SiestaBarriersBaseNick):
             final_relaxed_path = '',
             initial_relaxed_fdf_name = 'input.fdf',
             final_relaxed_fdf_name = 'input.fdf',
-            ghost = True,
+            ghost = False,
             moving = False,
             relaxed = False,
             neb_path = 'neb',
@@ -541,7 +568,22 @@ class InterstitialNEB(SiestaBarriersBaseNick):
         self.moving = moving
         self.relaxed = relaxed
         
+        if self.ghost :
+            print("########################################################")
+            print("                       Warning ...!                     ")
+            print("           You are setting ghost flag to (True)         ")
+            print("   For the Interstitial it Might give WEIRD results     ")
+            print("########################################################")
+
+
         if self.relaxed == True:
+            print("########################################################")
+            print("                       NOTE                             ")
+            print(" You are setting relaxed flag to (True), You have to    ")
+            print(" provide relaxed path & fdf name for both (endpoint)    ")
+            print(" initial and final structures!                          ")
+            print("########################################################")
+
             print ("=================================================")
             print ("The Relaxed Interstitial Image Generation ...")
             print ("=================================================")
@@ -619,7 +661,7 @@ class KickNEB(SiestaBarriersBaseNick):
             final_atom_position,
             kicked_atom_final_position,
             number_of_images,
-            interpolation_method,
+            interpolation_method = 'idpp',
             initial_relaxed_path = '',
             final_relaxed_path = '',
             initial_relaxed_fdf_name = 'input.fdf',
@@ -695,32 +737,88 @@ class KickNEB(SiestaBarriersBaseNick):
         self.neb = NEB(images_ASE)
         self.neb.interpolate(self.interpolation_method,mic=True)
        
-        #self.images = []
-        #for i in range(self.number_of_images+2):
-        #    temp = sisl.Geometry.fromASE(self.images[i])
-        #    self.sisl_images.append(FixingSislImages(self.test['initial'], temp,"ghost",self.relaxed))
+        #-------------------------------------------------------------------
+        # For Kick
+        #-------------------------------------------------------------------
+        if self.relaxed == True:
+            d = self.final_atom_position - self.initial_atom_position
+        else:
+            d = self.final_atom_position - self.initial_atom_position
+        Steps = d / (self.number_of_images +1)
+
+        if self.relaxed == True:
+            FinalAtomPositionKick = self.__info['trace_atom_B_initial'].xyz[0]
+        else:
+            FinalAtomPositionKick = self.final_atom_position
+        MovingAtomIndex=len(self.neb.images[0].get_positions())
+        MovingAtomKick=np.array([])
+        for l in range(self.neb.nimages):
+            if l==0:
+                MovingAtomKick=np.append(MovingAtomKick,FinalAtomPositionKick)
+            if l>0:
+                MovingAtomKick=np.append(MovingAtomKick,FinalAtomPositionKick+Steps)
+                FinalAtomPositionKick=FinalAtomPositionKick+Steps
+        MovingAtomKick=MovingAtomKick.reshape(self.number_of_images+2,3)
+
+        if self.relaxed == True:
+            steps_x = np.divide(self.__info['trace_atom_B_kicked'].xyz[0][0]-MovingAtomKick[0][0],  len(MovingAtomKick))
+            steps_y = np.divide(self.__info['trace_atom_B_kicked'].xyz[0][1]-MovingAtomKick[0][1],  len(MovingAtomKick))
+            steps_z = np.divide(self.__info['trace_atom_B_kicked'].xyz[0][2]-MovingAtomKick[0][2],  len(MovingAtomKick))
+
+        else :
+            steps_x = np.divide(self.kicked_atom_final_position[0]-MovingAtomKick[0][0],  len(MovingAtomKick))
+            steps_y = np.divide(self.kicked_atom_final_position[1]-MovingAtomKick[0][1],  len(MovingAtomKick))
+            steps_z = np.divide(self.kicked_atom_final_position[2]-MovingAtomKick[0][2],  len(MovingAtomKick))
+        print (steps_x)
+        print (steps_y)
+        print (steps_z)
+        #Offset
+        Offset = np.array([])
+        for l in range(len(MovingAtomKick)):
+            if l == 0:
+                Offset=np.append(Offset,0.0)
+                Offset=np.append(Offset,0.0)
+                Offset=np.append(Offset,0.0)
+            else:
+                Offset=np.append(Offset,steps_x*l + steps_x)
+                Offset=np.append(Offset,steps_y*l + steps_y)
+                Offset=np.append(Offset,steps_z*l + steps_z)
+        Offset=Offset.reshape(len(MovingAtomKick),3)
+
+        MovingAtomKick=Offset+MovingAtomKick[0]
+        self.MovingAtomKick = MovingAtomKick
+        print("DEBUG: {}".format(self.MovingAtomKick))
+        sisl_moving=[]
+
+       # Fixing the Tag
+        self.KickedAtomInfo = self.__info['trace_atom_B_kicked']
+        print("DEBUG: {}".format(self.KickedAtomInfo))
+        for i in range(self.number_of_images+2):
+            sisl_moving.append(sisl.Geometry(xyz = self.MovingAtomKick[i],
+                                             atoms = sisl.Atom(Z = self.KickedAtomInfo.atom[0].Z,tag=self.KickedAtomInfo.atoms.atom[0].symbol+"_kicked")))
 
 
         self.images = []
         for i in range(self.number_of_images+2):
             self.images.append(sisl.Geometry.fromASE(images_ASE[i]))
+            self.images[i] = self.images[i].add(sisl_moving[i])
 
         
 
-        #if self.ghost == True and self.relaxed is not True:
-        #    for i in range(self.number_of_images+2):
-        #        print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
-        #        self.images[i] = self.images[i].add(self.__info['ghost_initial'])
-        #        print(f" Adding Ghost for image {i} in Sisl Geometry Object for final ")
-        #        self.images[i] = self.images[i].add(self.__info['ghost_final'])
+        if self.ghost == True and self.relaxed is not True:
+            for i in range(self.number_of_images+2):
+                print(f" Adding Ghost for image {i} in Sisl Geometry Object for initial ")
+                self.images[i] = self.images[i].add(self.__info['ghost_initial'])
+                print(f" Adding Ghost for image {i} in Sisl Geometry Object for final ")
+                self.images[i] = self.images[i].add(self.__info['ghost_final'])
 
         ## This is may be! a new feature, i am still testing it though!
-        #if self.moving == True and self.relaxed is not True:
-        #    for i in range(self.number_of_images+2):
-        #        if self.ghost:
-        #            self.images[i].atom[-3] = sisl.Atom(Z = self.images[i].atom[-3].Z,tag=self.images[i].atoms[-3].symbol+"_moving")
-        #        else:
-        #            self.images[i].atom[-1] = sisl.Atom(Z = self.images[i].atom[-1].Z,tag=self.images[i].atoms[-1].symbol+"_moving")
+        if self.moving == True and self.relaxed is not True:
+            for i in range(self.number_of_images+2):
+                if self.ghost:
+                    self.images[i].atom[-4] = sisl.Atom(Z = self.images[i].atom[-4].Z,tag=self.images[i].atoms[-4].symbol+"_moving")
+                else:
+                    self.images[i].atom[-2] = sisl.Atom(Z = self.images[i].atom[-2].Z,tag=self.images[i].atoms[-2].symbol+"_moving")
 
         if self.relaxed is not True:
             self.fdf_image = self.images[0]
