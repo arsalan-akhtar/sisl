@@ -637,7 +637,8 @@ class fdfSileSiesta(SileSiesta):
 
         Raises
         ------
-        SislWarning if none of the files can be read
+        SislWarning
+            if none of the files can be read
         """
         order = _listify_str(kwargs.pop('order', ['nc', 'ORB_INDX']))
         for f in order:
@@ -949,6 +950,11 @@ class fdfSileSiesta(SileSiesta):
         hermitian: bool, optional
             if true (default), the returned dynamical matrix will be hermitian
 
+        Notes
+        -----
+        This is highly untested and may result in errorneous matrices.
+        Please report back to developers about problems and suggestions.
+
         Returns
         -------
         dynamic_matrix : DynamicalMatrix
@@ -960,6 +966,7 @@ class fdfSileSiesta(SileSiesta):
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_dynamical_matrix) found in file={f}")
+                info(f"{self.file}.read_dynamical_matrix is experimental, untested!")
                 return v
         return None
 
@@ -1391,15 +1398,15 @@ class fdfSileSiesta(SileSiesta):
 
         # If the user requests a shifted geometry
         # we correct for this
-        origo = _a.zerosd([3])
+        origin = _a.zerosd([3])
         lor = self.get('AtomicCoordinatesOrigin')
         if lor:
             if kwargs.get('origin', True):
                 if isinstance(lor, str):
-                    origo = lor.lower()
+                    origin = lor.lower()
                 else:
-                    origo = _a.asarrayd(list(map(float, lor[0].split()[:3]))) * s
-        # Origo cannot be interpreted with fractional coordinates
+                    origin = _a.asarrayd(list(map(float, lor[0].split()[:3]))) * s
+        # Origin cannot be interpreted with fractional coordinates
         # hence, it is not transformed.
 
         # Read atom block
@@ -1443,34 +1450,34 @@ class fdfSileSiesta(SileSiesta):
             atoms = [atoms[i] for i in species]
         atoms = Atoms(atoms, na=len(xyz))
 
-        if isinstance(origo, str):
-            opt = origo
+        if isinstance(origin, str):
+            opt = origin
             if opt.startswith('cop'):
-                origo = sc.cell.sum(0) * 0.5 - np.average(xyz, 0)
+                origin = sc.cell.sum(0) * 0.5 - np.average(xyz, 0)
             elif opt.startswith('com'):
                 # TODO for ghost atoms its mass should not be used
                 w = atom.mass
                 w /= w.sum()
-                origo = sc.cell.sum(0) * 0.5 - np.average(xyz, 0, weights=w)
+                origin = sc.cell.sum(0) * 0.5 - np.average(xyz, 0, weights=w)
             elif opt.startswith('min'):
-                origo = - np.amin(xyz, 0)
+                origin = - np.amin(xyz, 0)
             if len(opt) > 4:
                 opt = opt[4:]
                 if opt == 'x':
-                    origo[1:] = 0.
+                    origin[1:] = 0.
                 elif opt == 'y':
-                    origo[[0, 2]] = 0.
+                    origin[[0, 2]] = 0.
                 elif opt == 'z':
-                    origo[:2] = 0.
+                    origin[:2] = 0.
                 elif opt == 'xy' or opt == 'yx':
-                    origo[2] = 0.
+                    origin[2] = 0.
                 elif opt == 'xz' or opt == 'zx':
-                    origo[1] = 0.
+                    origin[1] = 0.
                 elif opt == 'yz' or opt == 'zy':
-                    origo[0] = 0.
+                    origin[0] = 0.
 
         # create geometry
-        xyz += origo
+        xyz += origin
         geom = Geometry(xyz, atoms, sc=sc)
 
         # and finally check for supercell constructs

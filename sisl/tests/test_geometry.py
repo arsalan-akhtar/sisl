@@ -15,6 +15,8 @@ from sisl import Geometry, Atom, SuperCell
 
 _dir = osp.join('sisl')
 
+pytestmark = [pytest.mark.geom, pytest.mark.geometry]
+
 
 @pytest.fixture
 def setup():
@@ -34,8 +36,6 @@ def setup():
     return t()
 
 
-@pytest.mark.geom
-@pytest.mark.geometry
 class TestGeometry:
 
     def test_objects(self, setup):
@@ -776,8 +776,8 @@ class TestGeometry:
         g = setup.mol.translate([0.05] * 3)
         sc = SuperCell(1.5)
         for o in range(10):
-            origo = [o - 0.5, -0.5, -0.5]
-            sc.origo = origo
+            origin = [o - 0.5, -0.5, -0.5]
+            sc.origin = origin
             idx = g.within_inf(sc)[0]
             assert len(idx) == 1
             assert idx[0] == o
@@ -1186,7 +1186,7 @@ class TestGeometry:
         g = setup.g.attach(0, setup.mol, 0, dist='calc', axis=2)
         g = setup.g.attach(0, setup.mol, 0, dist=[0, 0, 1.42])
 
-    def test_mirror1(self, setup):
+    def test_mirror_function(self, setup):
         g = setup.g
         for plane in ['xy', 'xz', 'yz', 'ab', 'bc', 'ac']:
             g.mirror(plane)
@@ -1195,6 +1195,18 @@ class TestGeometry:
         assert g.mirror('xy') == g.mirror([0, 0, 1])
 
         assert g.mirror('xy', [0]) == g.mirror([0, 0, 1], [0])
+
+    def test_mirror_point(self):
+        g = Geometry([[0, 0, 0], [0, 0, 1]])
+        out = g.mirror('z')
+        assert np.allclose(out.xyz[:, 2], [0, -1])
+        assert np.allclose(out.xyz[:, :2], 0)
+        out = g.mirror('z', point=(0, 0, 0.5))
+        assert np.allclose(out.xyz[:, 2], [1, 0])
+        assert np.allclose(out.xyz[:, :2], 0)
+        out = g.mirror('z', point=(0, 0, 1))
+        assert np.allclose(out.xyz[:, 2], [2, 1])
+        assert np.allclose(out.xyz[:, :2], 0)
 
     def test_pickle(self, setup):
         import pickle as p
@@ -1499,6 +1511,17 @@ def test_geometry_sanitize_atom_shape():
     bi = sisl_geom.bilayer(bottom_atoms=Atom[6], top_atoms=(Atom[5], Atom[7])).tile(2, 0).repeat(2, 1)
     cube = Cube(10)
     assert len(bi.axyz(cube)) != 0
+
+
+def test_geometry_sanitize_atom_0_length():
+    gr = sisl_geom.graphene()
+    assert len(gr.axyz([])) == 0
+
+
+def test_geometry_sanitize_atom_0_length_float_fail():
+    gr = sisl_geom.graphene()
+    with pytest.raises(IndexError):
+        gr.axyz(np.array([], dtype=np.float64))
 
 
 def test_geometry_sanitize_orbs():

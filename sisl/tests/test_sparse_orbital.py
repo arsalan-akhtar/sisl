@@ -10,6 +10,7 @@ import scipy as sc
 from sisl import Geometry, Atom, SuperCell, Cuboid
 from sisl.geom import fcc, graphene
 from sisl.sparse_geometry import *
+import sisl.messages as sm
 
 
 pytestmark = [pytest.mark.sparse,
@@ -316,6 +317,27 @@ def test_sparse_orbital_replace_simple():
         assert np.fabs((new - spo44)._csr._D).sum() == 0.
 
 
+def test_sparse_orbital_replace_specie_warn():
+    """
+    Replacing an atom with another one but retaining couplings.
+    """
+    C = graphene()
+    spC = SparseOrbital(C)
+    spC.construct([(0.1, 1.45), (0, 2.7)])
+
+    N = graphene(atoms=C.atoms[1].copy(Z=5))
+    spN = SparseOrbital(N)
+    spN.construct([(0.1, 1.45), (0, 2.7)])
+
+    # Replace
+    with pytest.warns(sm.SislWarning):
+        sp = spC.copy()
+        sp.replace(0, spN, 0)
+    with pytest.warns(sm.SislWarning):
+        sp = spC.copy()
+        sp.replace(1, spN, 1)
+
+
 def test_sparse_orbital_replace_hole():
     """ Create a big graphene flake remove a hole (1 orbital system) """
     g = graphene(orthogonal=True)
@@ -338,7 +360,7 @@ def test_sparse_orbital_replace_hole():
     # now replace every position that can be replaced
     for y in [0, 2, 3]:
         for x in [1, 2, 3]:
-            cube = Cuboid(hole.sc.cell, origo=g.sc.offset([x, y, 0]) - 0.1)
+            cube = Cuboid(hole.sc.cell, origin=g.sc.offset([x, y, 0]) - 0.1)
             atoms = big.within(cube)
             assert len(atoms) == 4 * 6 * 6
             new = big.replace(atoms, hole)
@@ -380,7 +402,7 @@ def test_sparse_orbital_replace_hole_norbs():
     # now replace every position that can be replaced
     for y in [0, 3]:
         for x in [1, 3]:
-            cube = Cuboid(hole.sc.cell, origo=g.sc.offset([x, y, 0]) - 0.1)
+            cube = Cuboid(hole.sc.cell, origin=g.sc.offset([x, y, 0]) - 0.1)
             atoms = big.within(cube)
             assert len(atoms) == 4 * 6 * 6
             new = big.replace(atoms, hole)

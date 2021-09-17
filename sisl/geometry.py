@@ -336,7 +336,7 @@ class Geometry(SuperCellChild):
         """
         if atoms is None:
             return np.arange(self.na)
-        return np.asarray(atoms)
+        return _a.asarrayl(atoms)
 
     @_sanitize_atoms.register(str)
     def _(self, atoms):
@@ -389,13 +389,13 @@ class Geometry(SuperCellChild):
         """
         if orbitals is None:
             return np.arange(self.no)
-        return np.asarray(orbitals)
+        return _a.asarrayi(orbitals)
 
     @_sanitize_orbs.register(ndarray)
     def _(self, orbitals):
         if orbitals.dtype == bool_:
             return np.flatnonzero(orbitals)
-        return np.asarray(orbitals)
+        return orbitals
 
     @_sanitize_orbs.register(dict)
     def _(self, orbitals):
@@ -970,8 +970,8 @@ class Geometry(SuperCellChild):
             center = xyz_m + [x * dxyz[0], y * dxyz[1], z * dxyz[2]]
             # Correct in case the iteration steps across the maximum
             center = where(center < xyz_M, center, xyz_M)
-            dS[0].set_center(center[:])
-            dS[1].set_center(center[:])
+            dS[0].center = center[:]
+            dS[1].center = center[:]
 
             # Now perform the iteration
             # get all elements within two radii
@@ -2023,7 +2023,7 @@ class Geometry(SuperCellChild):
            the direction from which the angle is calculated from, default to ``x``.
            An integer specifies the corresponding lattice vector as the direction.
         ref : int or array_like, optional
-           the reference point from which the vectors are drawn, default to origo
+           the reference point from which the vectors are drawn, default to origin
            An integer species an atomic index.
         rad : bool, optional
            whether the returned value is in radians
@@ -2051,7 +2051,7 @@ class Geometry(SuperCellChild):
             return ang
         return np.degrees(ang)
 
-    def rotate(self, angle, v, origo=None, atoms=None, only='abc+xyz', rad=False):
+    def rotate(self, angle, v, origin=None, atoms=None, only='abc+xyz', rad=False):
         """ Rotate geometry around vector and return a new geometry
 
         Per default will the entire geometry be rotated, such that everything
@@ -2068,9 +2068,9 @@ class Geometry(SuperCellChild):
         v     : int or str or array_like
              the normal vector to the rotated plane, i.e.
              v = [1,0,0] will rotate the ``yz`` plane
-        origo : int or array_like, optional
+        origin : int or array_like, optional
              the origin of rotation. Anything but [0, 0, 0] is equivalent
-             to a `self.move(-origo).rotate(...).move(origo)`.
+             to a `self.move(-origin).rotate(...).move(origin)`.
              If this is an `int` it corresponds to the atomic index.
         atoms : int or array_like, optional
              only rotate the given atomic indices, if not specified, all
@@ -2086,11 +2086,11 @@ class Geometry(SuperCellChild):
         --------
         Quaternion : class to rotate
         """
-        if origo is None:
-            origo = [0., 0., 0.]
-        elif isinstance(origo, Integral):
-            origo = self.axyz(origo)
-        origo = _a.asarrayd(origo)
+        if origin is None:
+            origin = [0., 0., 0.]
+        elif isinstance(origin, Integral):
+            origin = self.axyz(origin)
+        origin = _a.asarrayd(origin)
 
         if not atoms is None:
             # Only rotate the unique values
@@ -2116,8 +2116,8 @@ class Geometry(SuperCellChild):
             # Prepare quaternion...
             q = Quaternion(angle, vn, rad=rad)
             q /= q.norm()
-            # subtract and add origo, before and after rotation
-            xyz[atoms, :] = q.rotate(xyz[atoms, :] - origo[None, :]) + origo[None, :]
+            # subtract and add origin, before and after rotation
+            xyz[atoms, :] = q.rotate(xyz[atoms, :] - origin[None, :]) + origin[None, :]
 
         return self.__class__(xyz, atoms=self.atoms.copy(), sc=sc)
 
@@ -2587,7 +2587,7 @@ class Geometry(SuperCellChild):
 
         # Now create a copy of the other geometry
         # so that we move it...
-        # Translate to origo, then back to position in new cell
+        # Translate to origin, then back to position in new cell
         o = other.translate(-other.xyz[other_atom] + self.xyz[atom] + v)
 
         # We do not know how to handle the lattice-vectors,
@@ -2641,8 +2641,8 @@ class Geometry(SuperCellChild):
             xyz[atoms, :] = self.xyz[atoms[::-1], :]
         return self.__class__(xyz, atoms=self.atoms.reverse(atoms), sc=self.sc.copy())
 
-    def mirror(self, method, atoms=None):
-        r""" Mirrors the atomic coordinates about the plane
+    def mirror(self, method, atoms=None, point=(0, 0, 0)):
+        r""" Mirrors the atomic coordinates about a plane given by its normal vector
 
         This will typically move the atomic coordinates outside of the unit-cell.
         This method should be used with care.
@@ -2654,21 +2654,34 @@ class Geometry(SuperCellChild):
            plane (``xy``, ``xz``, ``yz``) or about user defined vectors (``v``).
            A vector may also be specified by ``'ab'`` which is the vector normal
            to the plane spanned by the first and second lattice vector.
-           or user defined vector (`v`)
+           or user defined vector (`v`) which is defining a plane.
         atoms : array_like, optional
            only mirror a subset of atoms
+        point: (3,), optional
+           mirror coordinates around the plane that intersects the *method* vector
+           and this point
+
+        Examples
+        --------
+        >>> geom = geom.graphene()
+        >>> out = geom.mirror('x')
+        >>> out.xyz[:, 0]
+        [0.  -1.42]
+        >>> out = geom.mirror('x', point=(1.42/2, 0, 0))
+        >>> out.xyz[:, 0]
+        [1.42  0.]
         """
         atoms = self._sanitize_atoms(atoms)
+        point = _a.asarrayd(point)
 
-        g = self.copy()
         if isinstance(method, str):
             method = ''.join(sorted(method.lower()))
-            if method in ['z', 'xy']:
-                g.xyz[atoms, 2] *= -1
-            elif method in ['x', 'yz']:
-                g.xyz[atoms, 0] *= -1
-            elif method in ['y', 'xz']:
-                g.xyz[atoms, 1] *= -1
+            if method in ('z', 'xy'):
+                method = _a.arrayd([0, 0, 1])
+            elif method in ('x', 'yz'):
+                method = _a.arrayd([1, 0, 0])
+            elif method in ('y', 'xz'):
+                method = _a.arrayd([0, 1, 0])
             elif method == 'a':
                 method = self.cell[0]
             elif method == 'b':
@@ -2684,20 +2697,19 @@ class Geometry(SuperCellChild):
             else:
                 raise ValueError(f"{self.__class__.__name__}.mirror unrecognized 'method' value")
 
-        if not isinstance(method, str):
-            # it has to be an array of length 3
-            # Mirror about a user defined vector
-            method = _a.asarrayd(method).copy()
-            method /= fnorm(method)
+        # it has to be an array of length 3
+        # Mirror about a user defined vector
+        method = _a.asarrayd(method).copy()
+        method /= fnorm(method)
 
-            # project onto vector
-            vp = self.xyz[atoms, :].dot(method) * 2
+        # project onto vector
+        vp = (self.xyz[atoms, :] - point).dot(method) * 2
 
-            # convert coordinates
-            # first subtract the projection, then its mirror position
-            self.xyz[atoms, :] -= vp.reshape(-1, 1) * method.reshape(1, 3)
-
-        return self.__class__(g.xyz, atoms=g.atoms, sc=self.sc.copy())
+        # convert coordinates
+        # first subtract the projection, then its mirror position
+        g = self.copy()
+        g.xyz[atoms, :] -= vp.reshape(-1, 1) * method.reshape(1, 3)
+        return g
 
     @property
     def fxyz(self):
@@ -4068,7 +4080,7 @@ class Geometry(SuperCellChild):
 
         return d
 
-    def within_inf(self, sc, periodic=None, tol=1e-5, origo=None):
+    def within_inf(self, sc, periodic=None, tol=1e-5, origin=None):
         """ Find all atoms within a provided supercell
 
         Note this function is rather different from `close` and `within`.
@@ -4095,8 +4107,8 @@ class Geometry(SuperCellChild):
             length tolerance for the fractional coordinates to be on a duplicate site (in Ang).
             This allows atoms within `tol` of the cell boundaries to be taken as *inside* the
             cell.
-        origo : (3, ) of float
-            origo that is the basis for comparison
+        origin : (3,) of float, optional
+            origin that is the basis for comparison, default to 0.
 
         Returns
         -------
@@ -4112,8 +4124,8 @@ class Geometry(SuperCellChild):
         else:
             periodic = list(periodic)
 
-        if origo is None:
-            origo = _a.zerosd(3)
+        if origin is None:
+            origin = _a.zerosd(3)
 
         # Our first task is to construct a geometry large
         # enough to fully encompass the supercell
@@ -4132,24 +4144,24 @@ class Geometry(SuperCellChild):
         tile_max = np.where(tmp < tile_max, tile_max, tmp).astype(dtype=int32)
         del idx, tmp
 
-        # 1a) correct for origo displacement
-        idx = floor(dot(sc.origo, self.icell.T))
+        # 1a) correct for origin displacement
+        idx = floor(dot(sc.origin, self.icell.T))
         tile_min = np.where(tile_min < idx, tile_min, idx).astype(dtype=int32)
-        idx = floor(dot(origo, self.icell.T))
+        idx = floor(dot(origin, self.icell.T))
         tile_min = np.where(tile_min < idx, tile_min, idx).astype(dtype=int32)
 
         # 2. Reduce tiling along non-periodic directions
         tile_min = np.where(periodic, tile_min, 0)
         tile_max = np.where(periodic, tile_max, 1)
 
-        # 3. Find the *new* origo according to the *negative* tilings.
+        # 3. Find the *new* origin according to the *negative* tilings.
         #    This is important for skewed cells as the placement of the new
         #    larger geometry has to be shifted to have sc inside
-        big_origo = (tile_min.reshape(3, 1) * self.cell).sum(0)
+        big_origin = (tile_min.reshape(3, 1) * self.cell).sum(0)
 
         # The xyz geometry that fully encompass the (possibly) larger supercell
         tile = tile_max - tile_min
-        full_geom = (self * tile).translate(big_origo - origo)
+        full_geom = (self * tile).translate(big_origin - origin)
 
         # Now we have to figure out all atomic coordinates within
         cuboid = sc.toCuboid()

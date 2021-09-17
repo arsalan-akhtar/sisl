@@ -13,6 +13,7 @@ from sisl.shape.ellipsoid import *
 pytestmark = pytest.mark.shape
 
 
+@pytest.mark.filterwarnings("ignore", message="*orthogonalizes the vectors")
 def test_create_ellipsoid():
     el = Ellipsoid(1.)
     el = Ellipsoid([1., 1., 1.])
@@ -41,8 +42,11 @@ def test_tosphere():
     assert el.toSphere().radius == pytest.approx(1)
     el = Ellipsoid([1., 2., 3.])
     assert el.toSphere().radius == pytest.approx(3)
+    assert isinstance(el.to.sphere(), Sphere)
+    assert el.to.Sphere().radius == pytest.approx(3)
 
 
+@pytest.mark.filterwarnings("ignore", message="*orthogonalizes the vectors")
 def test_create_ellipsoid_fail():
     v0 = [1., 0.2, 1.0]
     v1 = [1., 0.2, 1.0]
