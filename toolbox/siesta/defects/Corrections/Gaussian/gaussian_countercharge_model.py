@@ -462,56 +462,77 @@ class GaussianCharge():
         return self.model_charges , self.grid_info
 
 
-    def compute_model_charge_rho_q_q0_with_cutoff(self):
+    def compute_model_charge_rho_q_q0_with_cutoff(self,shift=(90,90,90)):
        """
        """
-       print ("DEBUG q_q0")
-       from .utils_gaussian_rho import get_rho_model
+       import sisl
+       from .utils_gaussian_rho import get_shift_initial_rho_model,get_rho_model
+       from .utils_gaussian_model import get_reciprocal_grid
+       from ..Alignment.utils_alignment import get_interpolation 
+       print ("DEBUG q_q0 LOWER GRID")
+       #shift = (36,72,72) # Need to fix this
        scale_factor = self.model_iteration
- 
-
-       cell = self.host_structure.cell
+       
+       self.charge_for_align = self.rho_defect_q_q0_array 
+       
        r_cell = self.host_structure.rcell
+       lower_grid_dimension = get_reciprocal_grid(r_cell, self.cutoff)
+       if lower_grid_dimension[0]%2==0:
+            print(f'Siesta has EVEN mesh {lower_grid_dimension} Great...!')
 
-       print("Gaussian Class DEBUG: cell is :\n {}".format(cell))
-       print("Gaussian Class DEBUG: rec cell is :\n {}".format(r_cell))
-       dimension = self.rho_defect_q_q0_array.shape
+       else:
+            print(f'Siesta has ODD mesh {lower_grid_dimension} changing to Even ... !')
+            lower_grid_dimension = (lower_grid_dimension[0]-1,lower_grid_dimension[1]-1,lower_grid_dimension[2]-1)
+            #lower_grid_dimension = grid
+ 
+       print(f"lower gird is {lower_grid_dimension}")
+       charge_lower_grid = get_interpolation(self.rho_defect_q_q0_array ,lower_grid_dimension)
+       
+       #shift=(lower_grid_dimension[0]/4 ,
+       #       lower_grid_dimension[1]/4 ,
+       #       lower_grid_dimension[2]/4 )
+       
+       self.init_charge_before_shift = sisl.Grid ( lower_grid_dimension, geometry = self.host_structure)
+       #self.init_charge_before_shift.grid = self.rho_defect_q_q0_array
+       self.init_charge_before_shift.grid = charge_lower_grid
+       shift=( (int(self.defect_site[0]/self.init_charge_before_shift.dcell[0][0]+1 )) - lower_grid_dimension[0]/2,
+              lower_grid_dimension[1]/2 ,
+              lower_grid_dimension[2]/2 )
+ 
+       print(f"Grid Shift is {shift}")
+
+       self.init_charge = get_shift_initial_rho_model( charge_grid = charge_lower_grid, #self.rho_defect_q_q0_array, 
+                                                        shift_grid = shift,
+                                                        geometry =  self.host_structure )
+       sub_shift = ((0,scale_factor * self.init_charge.shape[0] - self.init_charge.shape[0]),
+                     (0,scale_factor * self.init_charge.shape[1] - self.init_charge.shape[0]),
+                     (0,scale_factor * self.init_charge.shape[2] - self.init_charge.shape[0]))
+
+       print(f"DEBUG: scale factor {scale_factor} with sub grid shift {sub_shift}")
+
+       charge = get_rho_model ( charge_grid = self.init_charge,
+                                geometry = self.host_structure,
+                                scale_f =  scale_factor,
+                                sub_grid_shift = sub_shift,
+                                write_out = True,
+                                )
+       dimension = charge.shape
        grid = (dimension[0], # * scale_factor,
                dimension[1], # * scale_factor,
                dimension[2], # * scale_factor
                 )
 
-       #if grid[0]%2==0:
-       #    print(f'Siesta has EVEN mesh {grid[0]} changing to odd')
-       #    #self.grid_dimension = (grid[0]-1,grid[1]-1,grid[2]-1)
-       #    self.grid_dimension = (grid[0]+1,grid[1]+1,grid[2]+1)
-       #else:
-       #    print(f'Siesta has ODD mesh {grid[0]} Great ... !')
-       #    self.grid_dimension = grid
        self.grid_dimension = grid
-       #self.grid_dimension = (grid[0]+1,grid[1]+1,grid[2]+1)
-        
-       
-       self.model_structures [scale_factor] = self.host_structure.tile(scale_factor,0).tile(scale_factor,1).tile(scale_factor,2)
-       #self.grid_dimension = get_reciprocal_grid(self.model_structures [scale_factor].rcell, self.cutoff)
-       #print("Gaussian Class DEBUG: The Grid Size is {}".format(self.grid_dimension))
-
-
        self.grid_info[scale_factor] = self.grid_dimension
        
+       self.model_charges[scale_factor] = charge.grid
+       self.model_structures [scale_factor] = self.host_structure.tile(scale_factor,0).tile(scale_factor,1).tile(scale_factor,2)
        print("Gaussian Class DEBUG: Computing Model Charge for scale factor {}".format(scale_factor))
        print("Dimension of Grid is {}".format(self.grid_info))
        print("Model Structure cell {}".format(self.model_structures[scale_factor].cell))
-       charge = get_rho_model ( charge_grid = self.rho_defect_q_q0_array, 
-                                geometry = self.host_structure,
-                                scale_f =  scale_factor,
-                                write_out = True,  
-                                )
-       
-       self.model_charges[scale_factor] = charge.grid
 
-       print ('MODEL CHARGE FROM RHO (Direct) DONE!')
-       
+
+       print ('MODEL CHARGE FROM RHO LOWER (Direct) DONE!')
        return self.model_charges , self.grid_info
 
 

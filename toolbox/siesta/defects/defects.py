@@ -305,7 +305,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     rho_host= self.rho_host,
                     rho_defect_q0 = self. rho_defect_q0, 
                     rho_defect_q= self.rho_defect_q ,
-
+                    cutoff = self.cutoff,
                     )
             self.Input_Gaussian.run()
             
@@ -331,6 +331,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         print("The Defect Site is        :{}".format(self.defect_site))
         print("The Correction Scheme is  :{}".format(self.correction_scheme))
         print("The Correction epsilon is :{}".format(self.epsilon))
+        #if self.scheme is not 'gaussian-model':
+        print(f"The mesh size is {self.host_VT.read_grid().shape}")
         print ("====================================================")
 
     def Reading_SIESTA_Data(self):
