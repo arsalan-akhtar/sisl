@@ -9,7 +9,7 @@ import numpy as np
 
 from .utils_alignment import get_potential_difference
 from .utils_alignment import get_alignment
-from .utils_alignment import get_interpolation
+from .utils_alignment import get_interpolation, get_interpolation_sisl_from_array
 from qe_tools import constants
 hartree_to_ev = constants.hartree_to_ev 
 
@@ -54,10 +54,12 @@ class PotentialAlignment():
         if self.charge_density.shape != self.first_potential.shape:
             print("Need  Interpolation")
             print("Interpolating...!")
-            self.charge_density = get_interpolation(self.charge_density,self.first_potential.shape)
+            #self.charge_density = get_interpolation(self.charge_density,self.first_potential.shape) AiiDA interpolation method
+            self.charge_density = get_interpolation_sisl_from_array(self.charge_density,self.first_potential.shape)
             print ("Shape of charge density NOW is {}".format(self.charge_density.shape))
         if self.second_potential.shape != self.first_potential.shape:
-            self.second_potential = get_interpolation(self.second_potential,self.first_potential.shape)
+            #self.second_potential = get_interpolation(self.second_potential,self.first_potential.shape)
+            self.second_potential = get_interpolation_sisl_from_array(self.second_potential,self.first_potential.shape)
             print ("Shape of second potential NOW is {}".format(self.second_potential.shape))
 
 

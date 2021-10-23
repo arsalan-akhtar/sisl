@@ -12,6 +12,7 @@ bohr_to_ang = constants.bohr_to_ang
 from .utils_gaussian_model import get_charge_model_sigma 
 from ..Model.model_potential import ModelPotential
 from ..Alignment.potential_alignment import PotentialAlignment
+from ..Model.utils_model_potential import get_integral
 
 class GaussianCharge():
     """
@@ -163,10 +164,18 @@ class GaussianCharge():
             print("--------------------********************************---------------------")
             print("                           Starting  RHO Scheme                          ")
             print("--------------------********************************--------------------\n")
-            self.rho_host_array = self.rho_host.read_grid().grid
-            self.rho_defect_q0_array = self.rho_defect_q0.read_grid().grid
-            self.rho_defect_q_array = self.rho_defect_q.read_grid().grid
-            self.rho_defect_q_q0_array= self.rho_defect_q_array - self.rho_defect_q0_array
+            self.rho_host_array = self.rho_host.read_grid()
+            self.rho_defect_q0_array = self.rho_defect_q0.read_grid()
+            self.rho_defect_q_array = self.rho_defect_q.read_grid()
+            self.rho_defect_q_q0_array_diff = self.rho_defect_q_array - self.rho_defect_q0_array
+            self.rho_defect_q_q0_array_abs = abs(self.rho_defect_q0_array - self.rho_defect_q_array)
+            rho_sum = self.rho_defect_q_q0_array_diff + self.rho_defect_q_q0_array_abs
+            rho_norm = (rho_sum/ get_integral(rho_sum.grid,rho_sum.cell)) * self.defect_charge
+            print(f"Normalize Charge density rho is { get_integral(rho_norm.grid,rho_norm.cell) }")
+            self.rho_defect_q_q0_array = rho_norm  #self.rho_defect_q_q0_array_diff + self.rho_defect_q_q0_array_abs
+
+            
+            #self.rho_defect_q_q0_array= self.rho_defect_q_array - self.rho_defect_q0_array
             while (self.should_run_model()):
                 
                 self.model_iteration +=1
@@ -466,14 +475,15 @@ class GaussianCharge():
        """
        """
        import sisl
-       from .utils_gaussian_rho import get_shift_initial_rho_model,get_rho_model
+       from .utils_gaussian_rho import get_shift_initial_rho_model,get_rho_model,shift_prepare 
        from .utils_gaussian_model import get_reciprocal_grid
-       from ..Alignment.utils_alignment import get_interpolation 
+       from ..Alignment.utils_alignment import get_interpolation_sisl 
        print ("DEBUG q_q0 LOWER GRID")
        #shift = (36,72,72) # Need to fix this
        scale_factor = self.model_iteration
        
-       self.charge_for_align = self.rho_defect_q_q0_array 
+       #self.charge_for_align = self.rho_defect_q_q0_array 
+       self.charge_for_align = self.rho_defect_q_q0_array.grid
        
        r_cell = self.host_structure.rcell
        lower_grid_dimension = get_reciprocal_grid(r_cell, self.cutoff)
@@ -486,22 +496,23 @@ class GaussianCharge():
             #lower_grid_dimension = grid
  
        print(f"lower gird is {lower_grid_dimension}")
-       charge_lower_grid = get_interpolation(self.rho_defect_q_q0_array ,lower_grid_dimension)
-       
-       #shift=(lower_grid_dimension[0]/4 ,
-       #       lower_grid_dimension[1]/4 ,
-       #       lower_grid_dimension[2]/4 )
+       charge_lower_grid = get_interpolation_sisl(self.rho_defect_q_q0_array ,lower_grid_dimension)
        
        self.init_charge_before_shift = sisl.Grid ( lower_grid_dimension, geometry = self.host_structure)
-       #self.init_charge_before_shift.grid = self.rho_defect_q_q0_array
        self.init_charge_before_shift.grid = charge_lower_grid
-       shift=( (int(self.defect_site[0]/self.init_charge_before_shift.dcell[0][0]+1 )) - lower_grid_dimension[0]/2,
-              lower_grid_dimension[1]/2 ,
-              lower_grid_dimension[2]/2 )
- 
+       
+       #shift=( (int(self.defect_site[0]/self.init_charge_before_shift.dcell[0][0]+1 )) - lower_grid_dimension[0]/2,
+       
+       #shift=(lower_grid_dimension[0]/2,
+       #       lower_grid_dimension[1]/2 ,
+       #       lower_grid_dimension[2]/2 )
+       shift = shift_prepare( defect_site = self.defect_site ,
+                              grid = self.init_charge_before_shift)
+                               
+
        print(f"Grid Shift is {shift}")
 
-       self.init_charge = get_shift_initial_rho_model( charge_grid = charge_lower_grid, #self.rho_defect_q_q0_array, 
+       self.init_charge = get_shift_initial_rho_model( charge_grid = charge_lower_grid.grid, #self.rho_defect_q_q0_array, 
                                                         shift_grid = shift,
                                                         geometry =  self.host_structure )
        sub_shift = ((0,scale_factor * self.init_charge.shape[0] - self.init_charge.shape[0]),

@@ -78,6 +78,52 @@ def get_interpolation(input_array, target_shape):
 
     return interp_array
 
+def get_interpolation_sisl_from_array(input_array, target_shape):
+    """
+    Interpolate an array into a larger array of size, `target_size`
+
+    Parameters
+    ----------
+    input_grid: sisl grid
+        Array to interpolate
+    target_shape: tuple
+        The target shape to interpolate the array to
+
+    Returns
+    -------
+    interpolated_array
+        The calculated difference of the two grids 
+    """
+    import sisl 
+    input_grid = sisl.Grid(input_array.shape)
+    input_grid.grid = input_array  
+
+    interp_array = input_grid.interp(target_shape)
+
+    return interp_array.grid
+
+
+
+
+def get_interpolation_sisl(input_grid, target_shape):
+    """
+    Interpolate an array into a larger array of size, `target_size`
+
+    Parameters
+    ----------
+    input_grid: sisl grid
+        Array to interpolate
+    target_shape: tuple
+        The target shape to interpolate the array to
+
+    Returns
+    -------
+    interpolated_array
+        The calculated difference of the two grids 
+    """
+    interp_array = input_grid.interp(target_shape)
+
+    return interp_array
 
 
 

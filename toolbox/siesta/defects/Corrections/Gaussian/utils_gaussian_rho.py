@@ -36,5 +36,36 @@ def get_rho_model(charge_grid,geometry,scale_f,sub_grid_shift,write_out=False):
         grid_SC.write(f"model_charge-{scale_f}{scale_f}{scale_f}.XSF")
     return grid_SC
 
+def shift_prepare(defect_site,grid):
+    """
+    """
+    if defect_site[0]!=0.0:
+        n_x = int(defect_site[0]/grid.dcell[0][0])+1
+    else:
+        n_x = 0
+    if defect_site[1]!=0.0:
+        n_y = int(defect_site[1]/grid.dcell[1][1])+1
+    else:
+        n_y = 0
+    if defect_site[2]!=0.0:
+        n_z = int(defect_site[2]/grid.dcell[2][2])+1
+    else:
+        n_z = 0
+    print (f" Defect site position on mesh {n_x,n_y,n_z}")
+    print (f" Defect site recheck {n_x*grid.dcell[0][0],n_y*grid.dcell[1][1],n_z*grid.dcell[2][2]}")
+    
+    if n_x >= grid.shape[0]/2:
+        s_x = int(grid.shape[0]/2)+int((n_x-int(grid.shape[0]/2)))
+    else:
+        s_x = int((int(grid.shape[0]/2)-n_x))
+    if n_y >= grid.shape[0]/2:
+        s_y = int(grid.shape[0]/2)+int((n_y-int(grid.shape[0]/2)))
+    else:
+        s_y = int((int(grid.shape[0]/2)-n_y))  
+    if n_z >= grid.shape[0]/2:
+        s_z = int(grid.shape[0]/2)+int((n_z-int(grid.shape[0]/2)))
+    else:       
+        s_z = int((int(grid.shape[0]/2)-n_z))
 
-
+    shift=(s_x,s_y,s_z)
+    return shift

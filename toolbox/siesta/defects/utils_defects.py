@@ -45,8 +45,8 @@ def get_vbm_siesta_manual_bands(path_dir,fdf_name, NE):
 
     #N_electron = int(BANDS.file.read_text().split()[3])
     N_electron = NE
-    #vb_index = int(N_electron/2)-1  May be A Bug!
-    vb_index = int(N_electron/2)-2
+    #vb_index = int(N_electron/2) #-1  #May be A Bug!
+    vb_index = int(N_electron/2)-2 # Correct
 
     eig_gamma=BANDS.read_data()
 

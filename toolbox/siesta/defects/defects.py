@@ -210,7 +210,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                   
         self.fit_params = fit_params
         self.check_cutoff()
-
+        self.Reading_SIESTA_Data()
 
     def run(self):
         print ("The Defect Correction Package for SIESTA...")
@@ -425,17 +425,23 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         """
         Calulating uncorrected formation_energy
         """
-
+        #vbm_diff = (self.defect_q_vbm -self.host_vbm)
+        #fermi_diff = self.defect_q_fermi- self.host_fermi
+        #fermi_shift = self.defect_q_fermi + vbm_diff - fermi_diff
+        #self.fermi_level = self.fermi_level + fermi_shift  
+        self.valence_band_maximum = self.host_vbm + self.host_fermi 
         self.uncorrected_fe = get_raw_formation_energy( defect_energy = self.defect_q_Energy, 
                                                    host_energy = self.host_Energy, 
                                                    add_or_remove = self.add_or_remove, 
                                                    chemical_potential = self.chemical_potential,
                                                    charge = self.defect_charge, 
                                                    fermi_energy = self.fermi_level, 
-                                                   valence_band_maximum = self.defect_q_vbm
+                                                   #valence_band_maximum = self.defect_q_vbm
+                                                   #valence_band_maximum = self.host_vbm
+                                                   valence_band_maximum = self.valence_band_maximum
                                                    )
         print ("Uncorrected Formation Energy : {} ".format(self.uncorrected_fe))
-
+        self.fermi_level = 0.0
 
     def calculate_corrected_formation_energy(self):
         """
