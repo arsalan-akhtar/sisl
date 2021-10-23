@@ -703,6 +703,7 @@ class KickNEB(SiestaBarriersBaseNick):
                 raise FileNotFoundError("intial/final relaxed fdf not provided")
             self.initial_structure = sisl.get_sile(self.initial_relaxed_path/ self.initial_relaxed_fdf_name).read_geometry(output=True)
             self.final_structure = sisl.get_sile(self.final_relaxed_path/ self.final_relaxed_fdf_name).read_geometry(output=True)
+            self.__info = prepare_ase_for_relaxed(self.initial_structure,self.final_structure,self.ghost)
             self.__initial = sisl.Geometry.toASE(self.initial_structure)
             self.__final = sisl.Geometry.toASE(self.final_structure)
  
@@ -747,7 +748,8 @@ class KickNEB(SiestaBarriersBaseNick):
         Steps = d / (self.number_of_images +1)
 
         if self.relaxed == True:
-            FinalAtomPositionKick = self.__info['trace_atom_B_initial'].xyz[0]
+            #FinalAtomPositionKick = self.__info['trace_atom_B_initial'].xyz[0]
+            FinalAtomPositionKick = self.__info['final'][-1].xyz
         else:
             FinalAtomPositionKick = self.final_atom_position
         MovingAtomIndex=len(self.neb.images[0].get_positions())
