@@ -44,6 +44,7 @@ def fit_energies(dimensions_dict, energies_dict):
             Parameters to fit
         """
         return a * x + b * x**3 + c
+        #return a * x + b * x**3  +  c
 
     #dimensions_dict = dimensions_dict.get_dict()
     #energies_dict = energies_dict.get_dict()

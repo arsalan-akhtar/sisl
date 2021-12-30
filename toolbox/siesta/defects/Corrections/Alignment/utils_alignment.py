@@ -127,7 +127,7 @@ def get_interpolation_sisl(input_grid, target_shape):
 
 
 
-def get_alignment(potential_difference, charge_density, tolerance):
+def get_alignment_density_weighted(potential_difference, charge_density, tolerance):
     """
     Compute the density-weighted potential alignment
     """
@@ -152,8 +152,14 @@ def get_alignment(potential_difference, charge_density, tolerance):
 
     return alignment
 
+def get_alignment_FNV(potential_difference):
+    """
+    """
+    alignment = np.average(np.abs(potential_difference))
+    return alignment 
 
-def get_total_alignment(alignment_dft_model, alignment_q0_host, charge):
+
+def get_total_alignment_density_weighted(alignment_dft_model, alignment_q0_host, charge):
     """
     Calculate the total potential alignment
 
@@ -178,6 +184,19 @@ def get_total_alignment(alignment_dft_model, alignment_q0_host, charge):
 
     return total_alignment
 
+def get_total_alignment_FNV (alignment_q0_host,charge):
+    """
+    """
+    total_alignment =  charge * alignment_q0_host
+    #if total_alignment > 0 :
+    #    total_alignment = total_alignment * -1.0
+    return total_alignment 
+
+def get_total_alignment_FNV_dft_model_part(alignment_dft_model,charge):
+    """
+    """
+    total_alignment = -1.0*(charge * alignment_dft_model)
+    return total_alignment 
 
 def get_total_correction(model_correction, total_alignment):
     """

@@ -8,11 +8,13 @@
 import numpy as np
 
 from .utils_alignment import get_potential_difference
-from .utils_alignment import get_alignment
+from .utils_alignment import get_alignment_density_weighted
+from .utils_alignment import get_alignment_FNV
+
 from .utils_alignment import get_interpolation, get_interpolation_sisl_from_array
 from qe_tools import constants
 hartree_to_ev = constants.hartree_to_ev 
-
+import sys
 class PotentialAlignment():
     """
     Align two electrostatic potentials according to a specified method.
@@ -47,34 +49,38 @@ class PotentialAlignment():
         """
         Input validation and context setup
         """
-        print ("Potential Alignment Scheme is {} ".format(self.scheme))
-        print ("Shape of first potential is {}".format(self.first_potential.shape)) 
-        print ("Shape of second potential is {}".format(self.second_potential.shape)) 
-        print ("Shape of charge density is {}".format(self.charge_density.shape)) 
+        print ("Potential Alignment Scheme is : {}".format(self.scheme))
+        print ("Shape of first potential is   : {}".format(self.first_potential.shape)) 
+        print ("Shape of second potential is  : {}".format(self.second_potential.shape)) 
+        print ("Shape of charge density is    : {}".format(self.charge_density.shape)) 
         if self.charge_density.shape != self.first_potential.shape:
             print("Need  Interpolation")
             print("Interpolating...!")
             #self.charge_density = get_interpolation(self.charge_density,self.first_potential.shape) AiiDA interpolation method
             self.charge_density = get_interpolation_sisl_from_array(self.charge_density,self.first_potential.shape)
-            print ("Shape of charge density NOW is {}".format(self.charge_density.shape))
+            print ("Shape of charge density NOW is   : {}".format(self.charge_density.shape))
         if self.second_potential.shape != self.first_potential.shape:
             #self.second_potential = get_interpolation(self.second_potential,self.first_potential.shape)
             self.second_potential = get_interpolation_sisl_from_array(self.second_potential,self.first_potential.shape)
-            print ("Shape of second potential NOW is {}".format(self.second_potential.shape))
+            print ("Shape of second potential NOW is : {}".format(self.second_potential.shape))
 
 
 
         if self.scheme == 'lany_zunger':
             print ("Not Implemented YET! BYE")
-
-        if  self.scheme == 'density_weighted':
-            print ("Computing First and Second Potential Difference")
+            sys.exit("Exiting")
+        
+        if self.scheme == 'FNV':
+            print("Using FNV alignment scheme")
             self.compute_difference()
-            #print ("DEBUG : DONE Computing First and Second Potential Difference ")
-            self.calculate_alignment_density_weighted()
+            self.calculate_alignment_FNV()
             self.results()
 
-
+        if  self.scheme == 'density_weighted':
+            print("Using Density Weighted alignment scheme")
+            self.compute_difference()
+            self.calculate_alignment_density_weighted()
+            self.results()
 
 
 
@@ -82,12 +88,11 @@ class PotentialAlignment():
         """
         Calculate the alignment according to the requested scheme
         """
-    
 
     def compute_difference(self):
         """
         """
-        #from utils_alignment import get_potential_difference
+        print ("Computing First and Second Potential Difference")
         self.potential_difference = get_potential_difference( first_potential = self.first_potential,
                                                               second_potential = self.second_potential
                                                              )
@@ -97,11 +102,14 @@ class PotentialAlignment():
         """
         """
         print ("Density Weighted Alignment Starts")
-        
-        #from utils_density_weighted import get_alignment
-        self.alignment = get_alignment(self.potential_difference,
-                                       self.charge_density,
-                                       self.tolerance)
+        self.alignment = get_alignment_density_weighted(self.potential_difference,
+                                                        self.charge_density,
+                                                        self.tolerance)
+
+    def calculate_alignment_FNV(self):
+        """
+        """
+        self.alignment = get_alignment_FNV (self.potential_difference)
 
 
     def results(self):

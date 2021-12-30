@@ -21,11 +21,13 @@ def get_charge_model_sigma(limits,
     """
     limits = limits
     dimensions = dimensions
-    defect_position = defect_position
+    #defect_position = defect_position
+    defect_position = [defect_position[1],defect_position[0],defect_position[2]]
     sigma = sigma
     charge = charge
     print("DEBUG: Dimensions = {}".format(dimensions))
     print("DEBUG: Limits = {}".format(limits))
+    print(f"DEBUG: Defect Position {defect_position}")
 
     i = np.linspace(0, limits[0], dimensions[0])
     j = np.linspace(0, limits[1], dimensions[1])
@@ -184,6 +186,10 @@ def get_gaussian_3d(grid, position, sigma):
     x = grid[0] - position[0]
     y = grid[1] - position[1]
     z = grid[2] - position[2]
+    #x = grid[1] - position[1]
+    #y = grid[0] - position[0]
+    #z = grid[2] - position[2]
+
     gaussian = -np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2)) / (
         (2.0 * np.pi)**1.5 * np.sqrt(sigma))
 
