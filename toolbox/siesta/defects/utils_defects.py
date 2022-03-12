@@ -40,6 +40,8 @@ def get_vbm_siesta_manual_bands(path_dir,fdf_name, NE):
     
     fdf =  sisl.get_sile(path_dir /fdf_name)
     host_label = fdf.get("SystemLabel")
+    if host_label is None:
+        host_label = 'siesta'
     band_file_name = host_label+".bands"
     BANDS = sisl.get_sile(path_dir/ band_file_name )
 

@@ -1,5 +1,6 @@
 import numpy as np
-
+Ang_to_Bohr = 1.88973
+One_Ang_to_Bohr = 1.0 / Ang_to_Bohr
 def get_shift_initial_rho_model(charge_grid,shift_grid,geometry):
     """
     chrage_grid : sisl grid
@@ -40,19 +41,19 @@ def shift_prepare(defect_site,grid):
     """
     """
     if defect_site[0]!=0.0:
-        n_x = int(defect_site[0]/grid.dcell[0][0])+1
+        n_x = int(defect_site[0]/(grid.dcell[0][0]))+1
     else:
         n_x = 0
     if defect_site[1]!=0.0:
-        n_y = int(defect_site[1]/grid.dcell[1][1])+1
+        n_y = int(defect_site[1]/(grid.dcell[1][1]))+1
     else:
         n_y = 0
     if defect_site[2]!=0.0:
-        n_z = int(defect_site[2]/grid.dcell[2][2])+1
+        n_z = int(defect_site[2]/(grid.dcell[2][2]))+1
     else:
         n_z = 0
     print (f" Defect site position on mesh {n_x,n_y,n_z}")
-    print (f" Defect site recheck {n_x*grid.dcell[0][0],n_y*grid.dcell[1][1],n_z*grid.dcell[2][2]}")
+    print (f" Defect site recheck {n_x*grid.dcell[0][0]*Ang_to_Bohr,n_y*grid.dcell[1][1]*Ang_to_Bohr,n_z*grid.dcell[2][2]*Ang_to_Bohr}")
     
     if n_x >= grid.shape[0]/2:
         s_x = int(grid.shape[0]/2)+int((n_x-int(grid.shape[0]/2)))

@@ -105,7 +105,7 @@ def get_interpolation_sisl_from_array(input_array, target_shape):
 
 
 
-def get_interpolation_sisl(input_grid, target_shape):
+def get_interpolation_sisl(input_grid, target_shape,order_in=1):
     """
     Interpolate an array into a larger array of size, `target_size`
 
@@ -121,10 +121,132 @@ def get_interpolation_sisl(input_grid, target_shape):
     interpolated_array
         The calculated difference of the two grids 
     """
-    interp_array = input_grid.interp(target_shape)
+    interp_array = input_grid.interp(shape=target_shape,order=order_in)
 
     return interp_array
 
+def get_charge_density_weighted(charge_density, tolerance,type_of_charge):
+    """
+    Compute the density-weighted Charge 
+    Basically it cuts the tails ...!
+    """
+    # Unpack
+
+    #charge_density = charge_density.get_array(
+    #    charge_density.get_arraynames()[0])
+    print(f"min charge :{charge_density.min()}")
+    print(f"max charge :{charge_density.max()}")
+    # Get array mask based on elements' charge exceeding the tolerance.
+    if type_of_charge =="h":
+        print("mask for holes")
+        mask = np.ma.greater_equal(np.abs(charge_density), tolerance)
+    #mask = np.ma.greater_equal((charge_density), tolerance)
+    if type_of_charge == "e":
+        print("mask for electrons")
+        mask = np.ma.less_equal(np.abs(charge_density), tolerance)
+
+    # Apply this mask to the diff array
+    #v_diff_masked = np.ma.masked_array(charge_density , mask=mask)
+    diff_masked = np.ma.masked_array(charge_density , mask=mask,fill_value=0.0)
+
+    # Check if any values are left after masking
+    if diff_masked.count() == 0:
+        print ("SOMETHING IS WROOOOOOOOOOOONGGGGGGGG")
+        #raise AllValuesMaskedError
+
+    # Compute average alignment
+    #alignment = np.average(np.abs(v_diff_masked))
+    #alignment = np.average(v_diff_masked)
+
+    return diff_masked
+
+
+#def get_charge_density_weighted(charge_density, tolerance):
+#    """
+#    Compute the density-weighted Charge 
+#    Basically it cuts the tails ...!
+#    """
+#    # Unpack
+#
+#    #charge_density = charge_density.get_array(
+#    #    charge_density.get_arraynames()[0])
+#
+#    # Get array mask based on elements' charge exceeding the tolerance.
+#    mask = np.ma.greater_equal(np.abs(charge_density), tolerance)
+#
+#    # Apply this mask to the diff array
+#    #v_diff_masked = np.ma.masked_array(charge_density , mask=mask)
+#    v_diff_masked = np.ma.masked_array(charge_density , mask=mask,fill_value=0.0)
+#
+#    # Check if any values are left after masking
+#    if v_diff_masked.count() == 0:
+#        print ("SOMETHING IS WROOOOOOOOOOOONGGGGGGGG")
+#        #raise AllValuesMaskedError
+#
+#    # Compute average alignment
+#    #alignment = np.average(np.abs(v_diff_masked))
+#    #alignment = np.average(v_diff_masked)
+#
+#    return v_diff_masked
+
+#def get_potential_density_weighted(potential_difference, charge_density, tolerance):
+#    """
+#    Compute the density-weighted potential alignment
+#    """
+#    # Unpack
+#
+#    #charge_density = charge_density.get_array(
+#    #    charge_density.get_arraynames()[0])
+#
+#    # Get array mask based on elements' charge exceeding the tolerance.
+#    mask = np.ma.greater(np.abs(charge_density), tolerance)
+#
+#    # Apply this mask to the diff array
+#    #v_diff_masked = np.ma.masked_array(potential_difference , mask=mask)
+#    v_diff_masked = np.ma.masked_array(potential_difference , mask=mask,fill_value=0.0)
+#
+#    # Check if any values are left after masking
+#    if v_diff_masked.count() == 0:
+#        print ("SOMETHING IS WROOOOOOOOOOOONGGGGGGGG")
+#        #raise AllValuesMaskedError
+#
+#    # Compute average alignment
+#
+#    return v_diff_masked
+
+def get_potential_density_weighted(potential_difference, charge_density, tolerance,type_of_charge):
+    """
+    Compute the density-weighted potential alignment
+    """
+    # Unpack
+
+    #charge_density = charge_density.get_array(
+    #    charge_density.get_arraynames()[0])
+
+    #charge_density = charge_density.get_array(
+    #    charge_density.get_arraynames()[0])
+    print(f"min charge :{charge_density.min()}")
+    print(f"max charge :{charge_density.max()}")
+    # Get array mask based on elements' charge exceeding the tolerance.
+    if type_of_charge =="h":
+        print("mask for holes")
+        mask = np.ma.greater_equal(np.abs(charge_density), tolerance)
+    #mask = np.ma.greater_equal((charge_density), tolerance)
+    if type_of_charge == "e":
+        print("mask for electrons")
+        mask = np.ma.less_equal(np.abs(charge_density), tolerance)
+    # Apply this mask to the diff array
+    #v_diff_masked = np.ma.masked_array(potential_difference , mask=mask)
+    v_diff_masked = np.ma.masked_array(potential_difference , mask=mask,fill_value=0.0)
+
+    # Check if any values are left after masking
+    if v_diff_masked.count() == 0:
+        print ("SOMETHING IS WROOOOOOOOOOOONGGGGGGGG")
+        #raise AllValuesMaskedError
+
+    # Compute average alignment
+
+    return v_diff_masked
 
 
 def get_alignment_density_weighted(potential_difference, charge_density, tolerance):
@@ -140,7 +262,8 @@ def get_alignment_density_weighted(potential_difference, charge_density, toleran
     mask = np.ma.greater(np.abs(charge_density), tolerance)
 
     # Apply this mask to the diff array
-    v_diff_masked = np.ma.masked_array(potential_difference , mask=mask)
+    #v_diff_masked = np.ma.masked_array(potential_difference , mask=mask)
+    v_diff_masked = np.ma.masked_array(potential_difference , mask=mask,fill_value=0.0)
 
     # Check if any values are left after masking
     if v_diff_masked.count() == 0:
@@ -148,15 +271,18 @@ def get_alignment_density_weighted(potential_difference, charge_density, toleran
         #raise AllValuesMaskedError
 
     # Compute average alignment
-    alignment = np.average(np.abs(v_diff_masked))
+    #alignment = np.average(np.abs(v_diff_masked))
+    alignment = np.average(v_diff_masked)
 
     return alignment
+
 
 def get_alignment_FNV(potential_difference):
     """
     """
-    alignment = np.average(np.abs(potential_difference))
-    return alignment 
+    #alignment = np.average(np.abs(potential_difference))
+    alignment = np.average(potential_difference)
+    return alignment.real 
 
 
 def get_total_alignment_density_weighted(alignment_dft_model, alignment_q0_host, charge):
@@ -180,16 +306,34 @@ def get_total_alignment_density_weighted(alignment_dft_model, alignment_q0_host,
 
     """
 
-    total_alignment = -1.0*(charge * alignment_dft_model) + (charge * alignment_q0_host)
+    part_a = -1.0*(charge * alignment_dft_model) 
+    #part_a = 1.0*(charge * alignment_dft_model) 
+    part_b = (charge * alignment_q0_host)
+    #total_alignment = -1.0*(charge * alignment_dft_model) + (charge * alignment_q0_host)
+    total_alignment = part_a + part_b
 
+
+    print(f"DEBUG: The q0_host {part_b} ")
+    print(f"DEBUG: The q_q0 {part_a} ")
     return total_alignment
 
-def get_total_alignment_FNV (alignment_q0_host,charge):
+def get_total_alignment_FNV (alignment_dft_model, alignment_q0_host,charge):
     """
     """
-    total_alignment =  charge * alignment_q0_host
-    #if total_alignment > 0 :
-    #    total_alignment = total_alignment * -1.0
+    #part_a = 1.0*(charge * alignment_dft_model) 
+    part_a = -1.0*(charge * alignment_dft_model) 
+    part_b = (charge * alignment_q0_host)
+    #part_b = (alignment_q0_host)
+    #total_alignment = -1.0*(charge * alignment_dft_model) + (charge * alignment_q0_host)
+    total_alignment = part_a + part_b
+    
+    print("DEBUG:----------------------------------------------")
+    print("DEBUG: q * (Delta V host_q0 - Delta V model_q_q0)  " )
+    print(f"DEBUG: The {charge} * Delta V model_q_q0 : {part_a} ")
+    print(f"DEBUG: The {charge} * Delta V host_q0    : {part_b} ")
+    print(f"DEBUG: Total Alignment Energy            : {total_alignment}")
+    print("DEBUG:----------------------------------------------")
+
     return total_alignment 
 
 def get_total_alignment_FNV_dft_model_part(alignment_dft_model,charge):
@@ -222,4 +366,30 @@ def get_total_correction(model_correction, total_alignment):
     #total_correction = model_correction + total_alignment
 
     return total_correction
+
+def get_density_weighted_potential(potential_difference, charge_density, tolerance):
+    """
+    Compute the density-weighted potential alignment
+    """
+    # Unpack
+
+    #charge_density = charge_density.get_array(
+    #    charge_density.get_arraynames()[0])
+
+    # Get array mask based on elements' charge exceeding the tolerance.
+    mask = np.ma.greater(np.abs(charge_density), tolerance)
+
+    # Apply this mask to the diff array
+    v_diff_masked = np.ma.masked_array(potential_difference , mask=mask)
+
+    # Check if any values are left after masking
+    if v_diff_masked.count() == 0:
+        print ("SOMETHING IS WROOOOOOOOOOOONGGGGGGGG")
+        #raise AllValuesMaskedError
+
+    # Compute average alignment
+    #alignment = np.average(np.abs(v_diff_masked))
+
+    return v_diff_masked
+
 

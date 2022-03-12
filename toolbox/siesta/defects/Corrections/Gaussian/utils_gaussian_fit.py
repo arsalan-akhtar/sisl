@@ -14,6 +14,9 @@ import numpy as np
 #from qe_tools.constants import bohr_to_ang
 #from qe_tools import CONSTANTS # bohr_to_ang
 
+from sisl import unit_convert
+Ang_to_Bohr = unit_convert("Ang","Bohr")
+One_Ang_to_Bohr = 1.0 / Ang_to_Bohr
 
 """
 Utility functions for the gaussian fit countercharge workchain
@@ -58,7 +61,100 @@ def get_integral(data, cell_matrix):
     element_volume = cell_vol / np.prod(data.shape)
     return np.sum(data) * element_volume
 
-def generate_charge_model(cell_matrix, peak_charge):
+def generate_charge_model(cell_matrix, peak_charge=None):
+    """
+    Return a function to compute a periodic gaussian on a grid.
+    The returned function can be used for fitting. 
+
+    Parameters
+    ----------
+    cell_matrix: 3x3 array
+        Cell matrix of the real space cell
+    peak_charge: float
+        The peak charge density at the centre of the gaussian.
+        Used for scaling the result.
+
+    Returns
+    -------
+    compute_charge
+        A function that will compute a periodic gaussian on a grid 
+        for a given cell and peak charge intensity
+    """
+
+    def compute_charge(
+        xyz_real,
+        x0, y0, z0,
+        sigma_x, sigma_y, sigma_z,
+        cov_xy, cov_xz, cov_yz):
+        """
+        For a given system charge, create a model charge distribution using 
+        an anisotropic periodic 3D gaussian.
+        The charge model for now is a Gaussian.
+
+        NOTE: 
+        The values for sigma and cov are not the values used in construction 
+        of the Gaussian. After the covariance matrix is constructed, its 
+        transpose is multiplied by itself (that is to construct a Gram matrix) 
+        to ensure that it is positive-semidefinite. It is this matrix which is 
+        the real covariance matrix. This transformation is to allow this 
+        function to be used directly by the fitting algorithm without a danger 
+        of crashing.  
+
+        Parameters
+        ----------
+        xyz_real: 3xN array 
+            Coordinates to compute the Gaussian for in cartesian coordinates.
+        x0, y0, z0: float
+            Center of the Gaussian in crystal coordinates.
+        sigma_x, sigma_y, sigma_z: float
+            Spread of the Gaussian (not the real values used, see note above).
+        cov_xy, cov_xz, cov_yz: float
+            Covariance values controlling the rotation of the Gaussian 
+            (not the real values used, see note above).
+
+        Returns
+        -------
+        g
+            Values of the Gaussian computed at all of the desired coordinates and 
+            scaled by the value of charge_integral.
+
+        """
+
+        # Construct the pseudo-covariance matrix
+        V = np.array([[sigma_x, cov_xy, cov_xz],[cov_xy, sigma_y, cov_yz], [cov_xz, cov_yz, sigma_z]])
+        # Construct the actual covariance matrix in a way that is always positive semi-definite
+        covar = np.dot(V.T, V)
+
+        gauss_position = np.array([x0, y0, z0])
+
+        # Apply periodic boundary conditions
+        g = 0
+        for ii in [-1, 0, 1]:
+            for jj in [-1, 0, 1]:
+                for kk in [-1, 0, 1]:
+                    # Compute the periodic origin in crystal coordinates
+                    origin_crystal = (gauss_position + np.array([ii, jj, kk])).reshape(3,1)
+                    # Convert this to cartesian coordinates
+                    origin_real = np.dot(cell_matrix.T, origin_crystal)
+                    # Compute the Gaussian centred at this position
+                    g = g + get_gaussian_3d(xyz_real.T, origin_real, covar)
+                    
+
+        print("DEBUG: Integrated charge density (unscaled) = {}".format(get_integral(g, cell_matrix)))
+
+        print("DEBUG: g.max()  = {}".format(g.max()))
+        # Scale the result to match the peak charge density
+        g = g * (peak_charge / g.max())
+        print("DEBUG: Peak Charge target  = {}".format(peak_charge))
+        print("DEBUG: Peak Charge scaled  = {}".format(g.max()))
+        print("DEBUG: Integrated charge density (scaled) = {}".format(get_integral(g, cell_matrix)))
+
+        return g
+
+    return compute_charge
+
+
+def generate_charge_model_old(cell_matrix, peak_charge):
     """
     Return a function to compute a periodic gaussian on a grid.
     The returned function can be used for fitting. 
@@ -231,6 +327,7 @@ def get_charge_model_fit(rho_defect_q0, rho_defect_q, structure):
     #rho_diff = (rho_host_data - rho_defect_q_data)/(bohr_to_ang**3)
     #rho_diff = rho_host_data - rho_defect_q_data
     rho_diff = rho_defect_q_data - rho_defect_q0_data
+    #rho_diff = rho_defect_q0_data - rho_defect_q_data
 
     # Detect the centre of the charge in the data
     max_pos_mat = np.array(np.unravel_index(rho_diff.argmax(), rho_diff.shape)) # matrix coords
@@ -292,9 +389,7 @@ def fit_charge_model(fit,charge_fit_tolerance,strict_fit):
     print (comment)
 
 
-
-
-def get_charge_model(cell_matrix, peak_charge, defect_charge, dimensions, gaussian_params):
+def get_charge_model(cell_matrix, defect_charge, dimensions, gaussian_params,peak_charge=None):
     """
     For a given system charge, create a model charge distribution.
 
@@ -318,10 +413,16 @@ def get_charge_model(cell_matrix, peak_charge, defect_charge, dimensions, gaussi
         The grid with the charge data as an AiiDA ArrayData object
 
     """
-
+    cell_matrix = cell_matrix #* Ang_to_Bohr
     #cell_matrix = cell_matrix.get_array('cell_matrix')
+    if peak_charge:
+        print(f"DEBUG: The peak charge is {peak_charge}")
+        peak_charge = peak_charge
     #peak_charge = peak_charge.value
     #defect_charge = defect_charge.value
+       
+    #gaussian_params = np.array(gaussian_params) #*Ang_to_Bohr
+    #gaussian_params = gaussian_params
     dimensions = np.array(dimensions)
     #gaussian_params = gaussian_params.get_list()
 
@@ -343,6 +444,63 @@ def get_charge_model(cell_matrix, peak_charge, defect_charge, dimensions, gaussi
     # Compensating jellium background
     g = g - np.sum(g)/np.prod(g.shape)
     print("DEBUG: Integrated charge density (jellium) = {}".format(get_integral(g, cell_matrix)))
+
+    # Pack the array
+    #model_charge_array = orm.ArrayData()
+    #model_charge_array.set_array('model_charge', g)
+
+    return g #model_charge_array
+ 
+
+def get_charge_model_old(cell_matrix, peak_charge, defect_charge, dimensions, gaussian_params):
+    """
+    For a given system charge, create a model charge distribution.
+
+    Parameters
+    ----------
+    cell_matrix: 3x3 array
+        Cell matrix of the real space cell.
+    peak_charge : float
+        The peak charge density at the centre of the gaussian.
+    defect_charge : float
+        Charge state of the defect
+    dimensions: 3x1 array-like
+        Dimensions of grid to compute charge on.
+    gaussian_params: list (length 6)
+        Parameters determining the distribution position and shape obtained
+        by the fitting procedure.
+
+    Returns
+    -------
+    model_charge_array
+        The grid with the charge data as an AiiDA ArrayData object
+
+    """
+    gaussian_params = np.array(gaussian_params)*Ang_to_Bohr
+    #cell_matrix = cell_matrix.get_array('cell_matrix')
+    #peak_charge = peak_charge.value
+    #defect_charge = defect_charge.value
+    dimensions = np.array(dimensions)
+    #gaussian_params = gaussian_params.get_list()
+
+    xyz_coords = get_xyz_coords(cell_matrix*Ang_to_Bohr, dimensions)
+
+    get_model = generate_charge_model(cell_matrix*Ang_to_Bohr, peak_charge*Ang_to_Bohr)
+    g = get_model(xyz_coords, *gaussian_params)
+
+    # Unflatten the array
+    g = g.reshape(dimensions)
+
+    print("DEBUG: fit params: {}".format(gaussian_params))
+
+    # Rescale to defect charge
+    print("DEBUG: Integrated charge density target  = {}".format(defect_charge))
+    g = g * (defect_charge / get_integral(g, cell_matrix*Ang_to_Bohr))
+    print("DEBUG: Integrated charge density (scaled) = {}".format(get_integral(g, cell_matrix*Ang_to_Bohr)))
+
+    # Compensating jellium background
+    g = g - np.sum(g)/np.prod(g.shape)
+    print("DEBUG: Integrated charge density (jellium) = {}".format(get_integral(g, cell_matrix*Ang_to_Bohr)))
 
     # Pack the array
     #model_charge_array = orm.ArrayData()

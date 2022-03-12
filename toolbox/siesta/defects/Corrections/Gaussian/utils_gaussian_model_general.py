@@ -12,7 +12,10 @@ def get_charge_model_sigma(limits,
                   dimensions,
                   defect_position,
                   sigma,
-                  charge):
+                  charge,
+                  gamma,
+                  eta,
+                  ):
     """
     For a given system charge, create a model charge distribution.
     The charge model for now is a Gaussian.
@@ -35,7 +38,7 @@ def get_charge_model_sigma(limits,
     grid = np.meshgrid(i, j, k)
 
     # Get the gaussian at the defect position
-    g = get_gaussian_3d(grid, defect_position, sigma)
+    g = get_gaussian_3d(grid, defect_position, sigma,charge,gamma,eta)
     # Get the offsets
     offsets = np.zeros(3)
     for axis in range(3):
@@ -51,7 +54,7 @@ def get_charge_model_sigma(limits,
         for dim1 in range(2):
             for dim2 in range(2):
                 image_offset = [dim0, dim1, dim2] * offsets
-                g = g + get_gaussian_3d(grid, defect_position + image_offset, sigma=sigma)
+                g = g + get_gaussian_3d(grid, defect_position + image_offset, sigma=sigma,charge=charge,gamma=gamma,eta=eta)
                 #g = get_gaussian_3d_old(grid, defect_position + image_offset, sigma=sigma)
 
     # Scale the charge density to the desired charge
@@ -178,7 +181,7 @@ def create_model_structure(base_structure, scale_factor):
 
 
 
-def get_gaussian_3d(grid, position, sigma):
+def get_gaussian_3d(grid, position, sigma,charge,gamma,eta):
     """
     Calculate 3D Gaussian on grid
     NOTE: Minus sign at front give negative values of charge density throughout the cell
@@ -186,19 +189,16 @@ def get_gaussian_3d(grid, position, sigma):
     x = grid[0] - position[0]
     y = grid[1] - position[1]
     z = grid[2] - position[2]
-    #x = grid[1] - position[1]
-    #y = grid[0] - position[0]
-    #z = grid[2] - position[2]
-
-    #gaussian = -np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2)) / (
-    #    (2.0 * np.pi)**1.5 * np.sqrt(sigma))
     
-    #gaussian = -np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2)) / (
-    #    np.sqrt(2.0 * np.pi) * sigma)
+    beta = sigma
+    N_gamma = (8*np.pi*gamma**3)**-1
+    N_beta = (np.pi*beta**2)**(-3/2)
 
-    gaussian = (np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2))) * (1.0/ (
-        np.sqrt(2.0 * np.pi) * sigma))
+    #w= 0.3
+    #eta = 1.0 - w
+    w = 1.0 - eta
 
+    gaussian = charge * w * N_gamma *(np.exp(-(x+y+z)/gamma)) + charge*(1-w)*N_beta*(np.exp(-(x**2 + y**2 + z**2) / (beta**2))) 
 
     return gaussian
 

@@ -241,6 +241,24 @@ def fit_energies(dimensions_dict, energies_dict):
         """
         return a * x + b * x**3 + c
 
+    #def fitting_func(x, a, b, c, d , e):
+    #    """
+    #    Function to fit:
+    #    E = a*Omega^(-3) + b*Omega^(-1) + c
+    #    Where:
+    #        Omega is the volume of the cell
+    #        a,b,c are parameters to be fitted
+    #
+    #    Parameters
+    #    ----------
+    #    x: Float
+    #        Linear cell dimension
+    #    a,b,c: Float
+    #        Parameters to fit
+    #    """
+    #    return a * x + b * x**3 + d * x**5 + e * x**4 + c 
+
+
     #dimensions_dict = dimensions_dict.get_dict()
     #energies_dict = energies_dict.get_dict()
 

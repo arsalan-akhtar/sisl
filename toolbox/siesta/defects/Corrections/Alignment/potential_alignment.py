@@ -11,6 +11,8 @@ from .utils_alignment import get_potential_difference
 from .utils_alignment import get_alignment_density_weighted
 from .utils_alignment import get_alignment_FNV
 
+from .utils_alignment import get_density_weighted_potential
+
 from .utils_alignment import get_interpolation, get_interpolation_sisl_from_array
 from qe_tools import constants
 hartree_to_ev = constants.hartree_to_ev 
@@ -50,6 +52,7 @@ class PotentialAlignment():
         Input validation and context setup
         """
         print ("Potential Alignment Scheme is : {}".format(self.scheme))
+        print ("Charge Tolerence if DW Scheme is : {}".format(self.tolerance))
         print ("Shape of first potential is   : {}".format(self.first_potential.shape)) 
         print ("Shape of second potential is  : {}".format(self.second_potential.shape)) 
         print ("Shape of charge density is    : {}".format(self.charge_density.shape)) 
@@ -79,6 +82,13 @@ class PotentialAlignment():
         if  self.scheme == 'density_weighted':
             print("Using Density Weighted alignment scheme")
             self.compute_difference()
+            self._get_density_weighted_potential()
+            self.calculate_alignment_density_weighted()
+            self.results()
+        
+        if self.scheme == 'FNV_DW':
+            print("Using FNV_DW alignment scheme")
+            self.compute_difference()
             self.calculate_alignment_density_weighted()
             self.results()
 
@@ -96,6 +106,13 @@ class PotentialAlignment():
         self.potential_difference = get_potential_difference( first_potential = self.first_potential,
                                                               second_potential = self.second_potential
                                                              )
+
+    def _get_density_weighted_potential(self):
+        """
+        """
+        self.potential_dw = get_density_weighted_potential(self.potential_difference,
+                                                 self.charge_density,
+                                                 self.tolerance)
 
 
     def calculate_alignment_density_weighted(self):

@@ -41,6 +41,9 @@ class DefectsFormationEnergyBase:
                  correction_scheme,
                  model_iterations_required,
                  sigma = 0.5,
+                 charge_dw_tol = 1.0e-3,
+                 gamma = None,
+                 eta = None,
                  host_fdf_name  = None,
                  neutral_defect_fdf_name = None,
                  charge_defect_fdf_name = None,
@@ -49,6 +52,7 @@ class DefectsFormationEnergyBase:
                  charge_defect_output_name = None,
                  cutoff = None,
                  potential_align_scheme=None,
+                 E_iso_type=None,
                  ):
 
         self.defect_site = defect_site 
@@ -58,6 +62,8 @@ class DefectsFormationEnergyBase:
         self.epsilon = epsilon
         self.correction_scheme = correction_scheme 
         self.sigma = sigma
+        self.gamma = gamma
+        self.eta = eta
         self.cutoff = cutoff
         self.potential_align_scheme = potential_align_scheme 
 
@@ -73,21 +79,30 @@ class DefectsFormationEnergyBase:
         self.host_output_name  = host_output_name
         self.neutral_defect_output_name = neutral_defect_output_name 
         self.charge_defect_output_name = charge_defect_output_name 
- 
+        
+        self.charge_dw_tol = charge_dw_tol
+        self.E_iso_type = E_iso_type
 
         # Structures
         print("DEBUG: initializing structures")
         self.host_structure = sisl.get_sile (self.host_path / host_fdf_name).read_geometry()
         self.host_structure_fdf = sisl.get_sile (self.host_path / host_fdf_name)
+
         self.host_systemlabel = self.host_structure_fdf.get("SystemLabel")
+        if self.host_systemlabel is None:
+            self.host_systemlabel = 'siesta'
         print(f"DEBUG: System Label for host {self.host_systemlabel}")
         self.defect_structure_neutral = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name).read_geometry()
         self.defect_structure_neutral_fdf = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name)
         self.defect_neutral_systemlabel  = self.defect_structure_neutral_fdf.get("SystemLabel")
+        if self.defect_neutral_systemlabel is None:
+            self.defect_neutral_systemlabel = 'siesta'
         print(f"DEBUG: System Label for host {self.defect_neutral_systemlabel}")
         self.defect_structure_charge = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name).read_geometry()
         self.defect_structure_charge_fdf = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name)
         self.defect_charge_sytemlabel = self.defect_structure_charge_fdf.get("SystemLabel") 
+        if self.defect_charge_sytemlabel is None:
+            self.defect_charge_sytemlabel = 'siesta'
         print(f"DEBUG: System Label for charge defect {self.defect_charge_sytemlabel}")
         self.add_or_remove = add_or_remove
 
@@ -110,8 +125,12 @@ class DefectsFormationEnergyBase:
     def initialize_potential(self,path,label):
         """
         """
-        lVT = label+'.VT'
-        lnc = label+'.nc'
+        #lVT = label+'.VT'
+        #lnc = label+'.nc'
+        #lnc = 'TotalPotential.grid.nc'
+        lVT = label+'.VH'
+        lnc = 'ElectrostaticPotential.grid.nc'
+ 
         if (path / lVT).exists():
             VT = path / lVT
             return VT
@@ -142,7 +161,13 @@ class DefectsFormationEnergyBase:
         """
 
         print("DEBUG: Check if correction scheme is valid ...")
-        correction_schemes_available = ["gaussian-model","gaussian-rho", "point","none","rho"]
+        correction_schemes_available = ["gaussian-model",
+                                        "gaussian-rho",
+                                        "point",
+                                        "none",
+                                        "rho",
+                                        "gaussian-model-tail",
+                                        "gaussian-model-general"]
         if self.correction_scheme is not None:
             if self.correction_scheme not in correction_schemes_available:
                 print("NOT IMPLEMENTED")
@@ -184,6 +209,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  correction_scheme,
                  model_iterations_required = 3 ,
                  sigma = 0.5,
+                 gamma = None,
+                 eta = None,
                  host_fdf_name ='input.fdf',
                  neutral_defect_fdf_name = 'input.fdf',
                  charge_defect_fdf_name = 'input.fdf',
@@ -192,7 +219,9 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  charge_defect_output_name = 'output.out',
                  cutoff = None,
                  fit_params = None,
-                 potential_align_scheme = 'FNV'
+                 potential_align_scheme = 'FNV',
+                 charge_dw_tol = 1.0e-3,
+                 E_iso_type = "original",
                  ):
     
 
@@ -208,6 +237,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  epsilon = epsilon,
                  correction_scheme = correction_scheme,
                  sigma = sigma,
+                 gamma = gamma,
+                 eta = eta,
                  model_iterations_required = model_iterations_required,
                  host_fdf_name = host_fdf_name,
                  neutral_defect_fdf_name = neutral_defect_fdf_name ,
@@ -216,7 +247,9 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  neutral_defect_output_name = neutral_defect_output_name,
                  charge_defect_output_name = neutral_defect_output_name,
                  cutoff = cutoff,
-                 potential_align_scheme = potential_align_scheme 
+                 potential_align_scheme = potential_align_scheme,
+                 charge_dw_tol = charge_dw_tol,
+                 E_iso_type = E_iso_type 
                  )
                   
         self.fit_params = fit_params
@@ -251,7 +284,9 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     epsilon = self.epsilon,
                     use_siesta_mesh_cutoff = self.use_siesta_mesh_cutoff,
                     cutoff = self.cutoff,
-                    potential_align_scheme = self.potential_align_scheme
+                    potential_align_scheme = self.potential_align_scheme,
+                    charge_dw_tol = self.charge_dw_tol,
+                    E_iso_type = self.E_iso_type
                     )
 
             self.Input_Gaussian.run()
@@ -270,6 +305,89 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
             self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
             self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+
+        elif DefectsFormationEnergyBase.setup(self)=="gaussian-model-tail":
+            print("Starting Gaussian Model tail Correction ..")          
+            print(f"Gaussian Model with eta :{self.eta} ..")          
+            self.Reading_inputs()
+            self.Input_Gaussian = GaussianCharge(
+                    v_host = self.host_VT,
+                    v_defect_q0 =  self.defect_q0_VT,
+                    v_defect_q  = self.defect_q_VT,
+                    defect_charge =  self.defect_charge,
+                    defect_site = self.defect_site,
+                    host_structure = self.host_structure,
+                    model_iterations_required = self.model_iterations_required,
+                    scheme = 'gaussian-model-tail',
+                    sigma = self.sigma, 
+                    eta = self.eta,
+                    epsilon = self.epsilon,
+                    use_siesta_mesh_cutoff = self.use_siesta_mesh_cutoff,
+                    cutoff = self.cutoff,
+                    potential_align_scheme = self.potential_align_scheme,
+                    charge_dw_tol = self.charge_dw_tol,
+                    E_iso_type = self.E_iso_type
+                    )
+
+            self.Input_Gaussian.run()
+
+            print("Calculating Isolated Defect Energy ...") 
+            self.iso_energy = self.Input_Gaussian.get_isolated_energy()
+
+            print("-------------------------") 
+            print("...Starting Alignments...") 
+            print("-------------------------") 
+            
+            # NOTE:
+            # Put it in Setup of Gaussian Class
+            #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
+
+            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+
+        elif DefectsFormationEnergyBase.setup(self)=="gaussian-model-general":
+            print("Starting Gaussian Model General with gamma and eta Correction ..")          
+            print(f"Gaussian Model with gamma :{self.gamma} ..")          
+            print(f"Gaussian Model with eta :{self.eta} ..")          
+            self.Reading_inputs()
+            self.Input_Gaussian = GaussianCharge(
+                    v_host = self.host_VT,
+                    v_defect_q0 =  self.defect_q0_VT,
+                    v_defect_q  = self.defect_q_VT,
+                    defect_charge =  self.defect_charge,
+                    defect_site = self.defect_site,
+                    host_structure = self.host_structure,
+                    model_iterations_required = self.model_iterations_required,
+                    scheme = 'gaussian-model-general',
+                    sigma = self.sigma, 
+                    gamma = self.gamma,
+                    eta = self.eta,
+                    epsilon = self.epsilon,
+                    use_siesta_mesh_cutoff = self.use_siesta_mesh_cutoff,
+                    cutoff = self.cutoff,
+                    potential_align_scheme = self.potential_align_scheme,
+                    charge_dw_tol = self.charge_dw_tol,
+                    E_iso_type = self.E_iso_type
+                    )
+
+            self.Input_Gaussian.run()
+
+            print("Calculating Isolated Defect Energy ...") 
+            self.iso_energy = self.Input_Gaussian.get_isolated_energy()
+
+            print("-------------------------") 
+            print("...Starting Alignments...") 
+            print("-------------------------") 
+            
+            # NOTE:
+            # Put it in Setup of Gaussian Class
+            #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
+
+            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+
 
         elif DefectsFormationEnergyBase.setup(self)=="gaussian-rho":
             print("Starting Gaussian Rho Correction ..")          
@@ -291,6 +409,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     rho_defect_q = self.rho_defect_q ,
                     fit_params = self.fit_params,
                     potential_align_scheme = self.potential_align_scheme,
+                    E_iso_type = self.E_iso_type,
                     )
             self.Input_Gaussian.run()
 
@@ -328,7 +447,9 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     rho_defect_q0 = self. rho_defect_q0, 
                     rho_defect_q= self.rho_defect_q ,
                     cutoff = self.cutoff,
-                    potential_align_scheme = self.potential_align_scheme
+                    potential_align_scheme = self.potential_align_scheme,
+                    charge_dw_tol = self.charge_dw_tol,
+                    E_iso_type = self.E_iso_type
                     )
             self.Input_Gaussian.run()
 
@@ -364,6 +485,11 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         print("The Correction epsilon is :{}".format(self.epsilon))
         #if self.scheme is not 'gaussian-model':
         print(f"The mesh size is {self.host_VT.read_grid().shape}")
+        if self.E_iso_type =="original":
+            print(f"The fitting will be with 1/L+1/L^3")
+        else:
+            print(f"The fitting will be with 1/L")
+
         print ("====================================================")
 
     def Reading_SIESTA_Data(self):
@@ -436,11 +562,67 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         print ("Total Alignment Energy is {}".format(self.total_alignment))
 
         #return self.total_alignment
+        self.align_host_q0_part = self.align_host_q0
+        self.align_dft_model_part = self.align_model_q_q0
+        self.align_q_q0_part = self.align_model_q_q0
+
+
+        print(f"Alignment host_q0            part is = {self.align_host_q0_part}")
+        print(f"Alignment q_q0               part is = {self.align_q_q0_part}")
+        print(f"Alignment model model_(q_q0) part is = {self.align_dft_model_part}")
+        print (f"Total Alignment Energy is            = {self.total_alignment}")
+ 
+    def calculate_total_alignment_FNV_DEBUG(self):
+        """
+
+        """
+        self.align_host_q0_part = self.align_host_q0
+        self.align_dft_model_part = self.align_model_q_q0
+        self.align_q_q0_part = self.align_model_q_q0
+        print(f"Alignment host_q0            part is = {self.align_host_q0_part}")
+        print(f"Alignment model model_(q_q0) part is = {self.align_dft_model_part}")
+        print(f"Alignment q_q0               part is = {self.align_q_q0_part}")
+
+
+        self.total_alignment = get_total_alignment_FNV(self.align_model_q_q0,
+                                                       self.align_host_q0,
+                                                       self.defect_charge)
+
+                                                   #0.0, #self.align_host_q0,
+                                                   #abs(self.defect_charge))
+ 
+        #print ("Total Alignment Energy is {}".format(self.total_alignment))
+
+        #return self.total_alignment
+
+        print (f"Total Alignment Energy is            = {self.total_alignment}")
+ 
+    def calculate_total_alignment_density_weighted_TEST(self):
+        """
+
+        """
+        self.total_alignment = get_total_alignment_density_weighted(self.align_q_q0,
+                                                   self.align_host_q0,
+                                                   self.defect_charge)
+ 
+        print ("Total Alignment Energy is {}".format(self.total_alignment))
+
+        #return self.total_alignment
+        self.align_host_q0_part = self.align_host_q0
+        self.align_dft_model_part = 0.0
+        self.align_q_q0_part = self.align_q_q0
+
+
+        print(f"Alignment host_q0            part is = {self.align_host_q0_part}")
+        print(f"Alignment q_q0               part is = {self.align_q_q0_part}")
+        print(f"Alignment model model_(q_q0) part is = {self.align_dft_model_part}")
+        print (f"Total Alignment Energy is            = {self.total_alignment}")
  
     def calculate_total_alignment_FNV(self,
                                       add_host_q0=False,
                                       add_q_q0=False,
                                       add_dfT_model_q_q0=False,
+                                      add_diff=False
                                       ):
         """
 
@@ -465,6 +647,10 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             self.total_alignment =  self.align_q_q0_part + self.total_alignment 
         if add_dfT_model_q_q0:
             self.total_alignment =  self.align_dft_model_part + self.total_alignment 
+
+        if add_diff :
+            self.total_alignment = self.align_q_q0_part - self.align_host_q0_part
+
         print (f"Total Alignment Energy is            = {self.total_alignment}")
     
     def calculate_total_alignment_manaul(self,value):
@@ -495,6 +681,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         #fermi_diff = self.defect_q_fermi- self.host_fermi
         #fermi_shift = self.defect_q_fermi + vbm_diff - fermi_diff
         #self.fermi_level = self.fermi_level + fermi_shift  
+        
+        #self.valence_band_maximum = self.host_vbm 
         self.valence_band_maximum = self.host_vbm + self.host_fermi 
         self.uncorrected_fe = get_raw_formation_energy( defect_energy = self.defect_q_Energy, 
                                                    host_energy = self.host_Energy, 
@@ -578,17 +766,17 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
 
         info = {}
         if self.add_or_remove=='remove':
-            info['Add_or_Remove']=specie
-        info ['Charge']= self.defect_charge
-        info ['Epsilon']= self.epsilon
-        info ['Epsilon']= self.epsilon
+            info['Add_or_Remove']=str(specie)
+        info ['Charge']= str(self.defect_charge)
+        info ['Epsilon']= str(self.epsilon)
+        #info ['Epsilon']= self.epsilon
         info ['Model_Corrections']= self.Input_Gaussian.model_correction_energies
-        info ['Alignment']={'host_q0': self.align_host_q0_part,
-                            'q_q0': self.align_q_q0_part,
-                            'model_q_q0': self.align_dft_model_part,
-                            'total': self.total_alignment}
-        info ['Uncorrected_Formation']= self.uncorrected_fe
-        info ['Corrected_Formation']= self.corrected_fe
+        info ['Alignment']={'host_q0': str(self.align_host_q0_part),
+                            'q_q0': str(self.align_q_q0_part),
+                            'model_q_q0': str(self.align_dft_model_part),
+                            'total': str(self.total_alignment)}
+        info ['Uncorrected_Formation']= str(self.uncorrected_fe)
+        info ['Corrected_Formation']= str(self.corrected_fe)
     
         y=json.dumps(info)
         if self.defect_charge>0:

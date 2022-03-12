@@ -13,20 +13,11 @@ from scipy.stats import multivariate_normal
 
 
 #from qe_tools.constants import hartree_to_ev, bohr_to_ang
-#from qe_tools import constants # hartree_to_ev, bohr_to_ang
-#hartree_to_ev = constants.hartree_to_ev
-#bohr_to_ang = constants.bohr_to_ang
+from qe_tools import constants # hartree_to_ev, bohr_to_ang
 
-#Ang_to_Bohr = 1.88973
-#One_Ang_to_Bohr = 1.0 / Ang_to_Bohr
-#eV_to_ry = 0.0734986176
-#Ry_Bohr_to_eV_Angstrom = 25.71104309541616 
+hartree_to_ev = constants.hartree_to_ev
+bohr_to_ang = constants.bohr_to_ang
 
-from sisl import unit_convert
-
-hartree_to_ev = unit_convert("Hartree","eV")
-Ang_to_Bohr = unit_convert("Ang","Bohr")
-One_Ang_to_Bohr =  1.0 / Ang_to_Bohr
 
 def get_model_potential(rcell_matrix, dimensions, charge_density, epsilon):
     """
@@ -48,9 +39,7 @@ def get_model_potential(rcell_matrix, dimensions, charge_density, epsilon):
     V_model_r
         The calculated model potential in real space array
     """
-    #hartree_to_ev = 27.2114
 
-    
     dimensions = np.array(dimensions)
     #cell_matrix = cell_matrix.get_array('cell_matrix')
     #charge_density = charge_density.get_array('model_charge')
@@ -84,7 +73,6 @@ def get_model_potential(rcell_matrix, dimensions, charge_density, epsilon):
     v_model = np.divide(
         charge_density_g, G_sqmod_array, where=G_sqmod_array != 0.0)
     V_model_g = v_model * 4. * np.pi / epsilon
-    #V_model_g = v_model * 4. * np.pi 
 
     V_model_g[dimensions[0] + 1, dimensions[1] + 1, dimensions[2] + 1] = 0.0
 
@@ -95,7 +83,7 @@ def get_model_potential(rcell_matrix, dimensions, charge_density, epsilon):
     #V_model_array = orm.ArrayData()
     #V_model_array.set_array('model_potential', V_model_r)
 
-    return V_model_r * hartree_to_ev #/ epsilon  #V_model_array
+    return V_model_r#V_model_array
 
 def get_model_potential_rho(rcell_matrix, dimensions, charge_density, epsilon):
     """
@@ -117,8 +105,9 @@ def get_model_potential_rho(rcell_matrix, dimensions, charge_density, epsilon):
     V_model_r
         The calculated model potential in real space array
     """
-
-    dimensions = np.array(dimensions) 
+    hartree_to_ev = 27.2114
+    ry_to_ev = 13.6056980659
+    dimensions = np.array(dimensions)
 
     # Set up a reciprocal space grid for the potential
     # Prepare coordinates in a 3D array of ijk vectors
@@ -134,6 +123,7 @@ def get_model_potential_rho(rcell_matrix, dimensions, charge_density, epsilon):
         -dimensions[0]:dimensions[0] , 
         -dimensions[1]:dimensions[1] , 
         -dimensions[2]:dimensions[2] ].T
+
     # Get G vectors
     G_array = np.dot(ijk_array, (rcell_matrix.T))
 
@@ -147,6 +137,7 @@ def get_model_potential_rho(rcell_matrix, dimensions, charge_density, epsilon):
     v_model = np.divide(
         charge_density_g, G_sqmod_array, where=G_sqmod_array != 0.0)
     V_model_g = v_model * 4. * np.pi / epsilon
+    #V_model_g = v_model * 4. * np.pi 
 
     V_model_g[dimensions[0] + 1, dimensions[1] + 1, dimensions[2] + 1] = 0.0
 
@@ -157,9 +148,7 @@ def get_model_potential_rho(rcell_matrix, dimensions, charge_density, epsilon):
     #V_model_array = orm.ArrayData()
     #V_model_array.set_array('model_potential', V_model_r)
 
-    #V_model_r_hartree= V_model_r  / Ry_Bohr_to_eV_Angstrom  
-    #V_model_r = V_model_r_hartree #* hartree_to_ev
-    return V_model_r * hartree_to_ev   #V_model_array
+    return V_model_r * hartree_to_ev #/ epsilon  #V_model_array
 
 
 
@@ -201,28 +190,10 @@ def get_fft(grid):
     """
     Get the FFT of a grid
     """
-    print("DEBUG: FFT ")
-    #return np.fft.hfft(grid)
     return np.fft.fftshift(np.fft.fftn(grid))
 
 
 def get_inverse_fft(fft_grid):
-    """
-    Get the inverse FFT of an FFT grid
-    """
-    print("DEBUG: IFFT ")
-    #return np.fft.ihfft(fft_grid)
-    return np.fft.ifftn(np.fft.ifftshift(fft_grid))
-
-
-def get_fft_original(grid):
-    """
-    Get the FFT of a grid
-    """
-    return np.fft.fftshift(np.fft.fftn(grid))
-
-
-def get_inverse_fft_original(fft_grid):
     """
     Get the inverse FFT of an FFT grid
     """
@@ -235,10 +206,12 @@ def get_energy(potential, charge_density, cell_matrix):
     """
     Calculate the total energy for a given model potential
     """
-    #hartree_to_ev = 27.2114
-    #energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix) * hartree_to_ev)
-    energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix))
+    hartree_to_ev = 27.2114
+    energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix) * hartree_to_ev)
+    #energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix))
     return (energy)
+
+
 
 def get_energy_rho(potential, charge_density, cell_matrix):
     """
@@ -248,11 +221,6 @@ def get_energy_rho(potential, charge_density, cell_matrix):
     #energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix) * hartree_to_ev)
     energy = np.real(0.5 * get_integral(charge_density*potential, cell_matrix))
     return (energy)
-
-
-
-
-
 
 
 

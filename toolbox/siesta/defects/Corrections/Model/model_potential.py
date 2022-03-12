@@ -10,7 +10,14 @@ import numpy as np
 from qe_tools import  constants
 
 bohr_to_ang = constants.bohr_to_ang
-from .utils_model_potential import get_model_potential, get_energy,get_model_potential_rho
+from .utils_model_potential import get_model_potential, get_energy 
+from .utils_model_potential import get_model_potential_rho, get_energy_rho 
+#from .utils_model_potential_rho import get_energy_rho ,get_model_potential_rho
+from sisl import unit_convert
+
+
+Ang_to_Bohr = unit_convert("Ang","Bohr") #1.88973
+One_Ang_to_Bohr = 1.0 / Ang_to_Bohr
 
 
 class ModelPotential():
@@ -38,8 +45,8 @@ class ModelPotential():
         print("--------------------ModelPotential Class Start--------------------\n")
         print("ModelPotential Class Debug: grid dimension is {}".format(self.grid[self.scale_factor]))
         print("ModelPotential Class Debug: Computing model potential for scale factor {}".format(self.scale_factor))
-        self.cell = self.structure.cell
-        self.r_cell = self.structure.rcell
+        self.cell = self.structure.cell   * Ang_to_Bohr
+        self.r_cell = self.structure.rcell * One_Ang_to_Bohr 
         print("ModelPotential Class DEBUG: cell is :\n {}".format(self.cell))
         print("ModelPotential Class DEBUG: rec cell is :\n {}".format(self.r_cell))
  
@@ -81,11 +88,11 @@ class ModelPotential():
         #self.r_cell = get_reciprocal_cell(self.cell)
         #print("ModelPotential Class DEBUG: cell is :\n {}".format(self.cell))
         #print("ModelPotential Class DEBUG: rec cell is :\n {}".format(self.r_cell))
-        
+        #ang_to_bohr = 1.0 #1.88973 
         if self.rho:
-            self.model_potential = get_model_potential_rho( self.r_cell,
+            self.model_potential = get_model_potential( self.r_cell,
                                                 dimensions= self.grid[self.scale_factor],
-                                                charge_density= self.charge_density[self.scale_factor],
+                                                charge_density= self.charge_density[self.scale_factor]/unit_convert("Ang","Bohr")**3,
                                                 epsilon=self.epsilon                                      
                                                )
         else:
@@ -97,7 +104,7 @@ class ModelPotential():
                                                )
             else:
                 print("ModelPotential Class DEBUG: Model Potential with cutoff! ")
-                self.model_potential = get_model_potential ( rcell_matrix = self.r_cell,
+                self.model_potential = get_model_potential ( rcell_matrix = self.r_cell ,
                                                 dimensions = self.grid[self.scale_factor],
                                                 charge_density = self.charge_density[self.scale_factor],
                                                 epsilon = self.epsilon
@@ -112,7 +119,14 @@ class ModelPotential():
         """
         print("ModelPotential Class Debug: Computing model energy for scale factor {}".format(self.scale_factor))
         hartree_to_eV = 27.2114
-        self.model_energy = get_energy(potential = self.model_potential,
+        if self.rho:
+            print("Debug: Energy with rho... ")
+            self.model_energy = get_energy_rho(potential = self.model_potential,
+                                       charge_density = self.charge_density[self.scale_factor]/unit_convert("Ang","Bohr")**3,
+                                       cell_matrix = self.cell)
+        else:
+            print("Debug: Energy with Gaussian... ")
+            self.model_energy = get_energy(potential = self.model_potential,
                                        charge_density = self.charge_density[self.scale_factor],
                                        cell_matrix = self.cell)
 
