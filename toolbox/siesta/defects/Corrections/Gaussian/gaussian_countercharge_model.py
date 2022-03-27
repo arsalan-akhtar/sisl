@@ -15,6 +15,7 @@ from ..Alignment.potential_alignment import PotentialAlignment
 from ..Model.utils_model_potential import get_integral
 from .utils_gaussian_rho import cut_rho
 import sisl
+from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import shift_prepare
 
 from sisl import unit_convert
 Ang_to_Bohr = unit_convert("Ang","Bohr")
@@ -50,7 +51,9 @@ class GaussianCharge():
                  fit_params = None,
                  potential_align_scheme = None, 
                  charge_dw_tol = None,
-                 E_iso_type = 'original'
+                 E_iso_type = 'original',
+                 avg_plane = None,
+                 #defect_structure_charge=None,
                  ):
 
         self.v_host = v_host 
@@ -75,7 +78,7 @@ class GaussianCharge():
         self.potential_align_scheme = potential_align_scheme 
         self.charge_dw_tol = charge_dw_tol 
         self.E_iso_type = E_iso_type
-        
+        self.avg_plane = avg_plane 
         #self.run()
     def run(self):
 
@@ -117,6 +120,9 @@ class GaussianCharge():
                 else:
                     print("DEBUG: Generating the Mesh to Calculating the Model Charge ")
                     charge_model_info = self._compute_model_charge_with_cutoff()
+
+                    #print(f"DEBUG: Normalize Charge density Gaussian is { get_integral(self.model_charges[self.model_iteration]*Ang_to_Bohr,self.model_structures[self.model_iteration].cell*Ang_to_Bohr) }")
+
                     print ("Computing MODEL INFO")
                     self.model_energies [self.model_iteration] = self._compute_model_potential(charge_model_info)
         
@@ -385,6 +391,9 @@ class GaussianCharge():
         # Compute the difference in the DFT potentials for the cases of host and q=0
         # NOTE: I haven't Used this
         self.v_host_q0 = self.v_host_array.grid - self.v_defect_q0_array.grid
+        
+        # for Classic USE THIS
+        self.v_host_q_array = ( self.v_host_array - self.v_defect_q_array) * 2
 
         #print (self.v_defect_q0_array)
         # Dict to store model energies
@@ -497,16 +506,17 @@ class GaussianCharge():
                                         dimensions =  self.grid_dimension,
                                         defect_position =  self.defect_site*Ang_to_Bohr,
                                         sigma =  self.sigma,#*Ang_to_Bohr,
-                                        charge = self.defect_charge
+                                        charge = self.defect_charge,
+                                        cell_matrix = cell
                                         )
 
        self.model_charges[scale_factor] = charge
-       if scale_factor==1:
-           self.charge_for_align = self.model_charges[scale_factor]
-           self.write_model_charge(scale_factor)
+       #if scale_factor==1:
+       #    self.charge_for_align = self.model_charges[scale_factor]
+       #    self.write_model_charge(scale_factor)
        
-       #self.charge_for_align = self.model_charges[scale_factor]
-       #self.write_model_charge(scale_factor)
+       self.charge_for_align = self.model_charges[scale_factor]
+       self.write_model_charge(scale_factor)
 
 
 
@@ -847,11 +857,12 @@ class GaussianCharge():
         self._charge_lower_grid = get_interpolation_sisl(self._charge,lower_grid_dimension)
         # Writing in sisl grid 
         self.charge_lower_grid_sisl = sisl.Grid(shape =self._charge_lower_grid.shape,
-                geometry = self.model_structures [scale_factor]
+                #geometry = self.model_structures [scale_factor]
+                #geometry = self.defect_structure_charge 
                 )
         self.charge_lower_grid_sisl.grid = self._charge_lower_grid.grid
-        if scale_factor ==1:
-            self.charge_lower_grid_sisl.write(f"Test-{scale_factor}.XSF")
+        #if scale_factor ==1:
+        #    self.charge_lower_grid_sisl.write(f"Test-{scale_factor}.XSF")
         #self.charge_lower_grid_sisl.write(f"Test-{scale_factor}.XSF")
 
         dimension = self._charge_lower_grid.shape
@@ -1063,12 +1074,13 @@ class GaussianCharge():
         for_shift = sisl.Grid(self.v_model[1].shape,geometry=self.model_structures[1])
         for_shift.grid = self.v_model[1]
         
-        shift=reverse_shift_prepare( defect_site = self.defect_site ,
-                                     grid = for_shift)
-        self.v_model['long'] = get_shift_initial_rho_model( charge_grid = for_shift.grid,
-                                                            shift_grid = shift,
-                                                             geometry =  self.model_structures[1])
- 
+        #shift=reverse_shift_prepare( defect_site = self.defect_site ,
+        #                             grid = for_shift)
+        #self.v_model['long'] = get_shift_initial_rho_model( charge_grid = for_shift.grid,
+        #                                                    shift_grid = shift,
+        #                                                     geometry =  self.model_structures[1])
+        
+        self.v_model ['long'] = for_shift
 
     #=================================================
     #  Calculating The Energy of the 
@@ -1204,6 +1216,7 @@ class GaussianCharge():
                                                      charge_density= self.charge_for_align,
                                                      scheme = 'FNV', #self.potential_align_scheme,
                                                      tolerance = self.charge_dw_tol,
+                                                     #defect_site = self.defect_site,
                                                      )
             self.align_model_q_q0 = self._potential_align_model_q_q0.run()
 
@@ -1274,6 +1287,45 @@ class GaussianCharge():
             self.align_dft_mdoel = potential_alignment_dft_model.run()
             return self.align_dft_model
 
+    def compute_alignment_h_q_model(self):
+        """
+        Align the relative electrostatic potential of the defective material in the q_q0 
+        state with the pristine host system
+        """
+        print( "..........................................................................")
+        print( "Starting Alignment for DFT h_q with model_V")
+        #print( "..........................................................................")
+        V_mid = shift_prepare(self.defect_site,self.v_host_q_array)
+
+
+        if self.scheme=='rho':
+            print("DEBUG: DFT h_q_ with V_model ")
+
+            self._potential_align_h_q_model = PotentialAlignment(first_potential= self.v_host_q_array.grid,
+                                                     second_potential= self.v_model['long'].grid,
+                                                     #charge_density= self.charge_for_align,
+                                                     scheme = 'Classic', 
+                                                     pot_site = V_mid[2],
+                                                     avg_plane = self.avg_plane,
+                                                     )
+            self.align_host_q_model = self._potential_align_h_q_model.run()
+
+            return self.align_host_q_model 
+
+        else:
+            self._potential_align_h_q_model = PotentialAlignment(first_potential= self.v_host_q_array.grid,
+                                                     second_potential= self.v_model[1],
+                                                     #charge_density= self.model_charges[1],
+                                                     scheme = 'Classic', 
+                                                     pot_site = V_mid[2],
+                                                     avg_plane = self.avg_plane,
+                                                     ) 
+            self.align_host_q_model = self._potential_align_h_q_model.run()
+
+            return self.align_host_q_model 
+
+
+
     #=================================================
     #  Costumized Method for  Calculating / Writining
     #  and Plotting Stuff for Charge and Potentials
@@ -1289,3 +1341,110 @@ class GaussianCharge():
         grid.set_geometry(self.model_structures [scale])
         grid.write(name)
         print(f"DEBUG file {name} ")
+
+
+    def plot_eta(self,
+            save = False,
+            q_q0 = True,
+            host_q = False,
+            host_q0 = False,
+            **kwargs):
+        """
+        """
+        import matplotlib.pyplot as plt
+        epsilon = self.epsilon
+        eta = self.eta        
+        dpi_size=800
+        name_graph="eta-charge"
+        #title_name_graph = r" " 
+        for k,v in kwargs.items():
+            if k == 'epsilon':
+                epsilon = v
+            if k == 'eta':
+                eta = v
+            if k == 'dpi_size':
+                dpi_size = v
+            if k == 'name_graph':
+                name_graph == v 
+            #if k == 'title_name_graph':
+            #    title_name_graph = v
+            if k == 'Charge':
+                Charge_q_q0 = v
+                
+        charge_eta = (1-0.6*(1/epsilon))*self.defect_charge
+        charge_epsilon = (1-1*(1/epsilon))*self.defect_charge
+        print(f" charge eta:{charge_eta}\n charge epsilon {charge_epsilon}")
+
+
+        if q_q0:
+            c_avg = np.average(self.rho_defect_q_q0_array.grid*self.host_structure.volume,(0,1))
+            #c_avg_mask = np.average(Charge_q_q0_masked,(0,1))
+            fig = plt.figure()
+            #plt.title(title_name_graph)
+            plt.title(r"$q-q_0$")
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$',linestyle="-",alpha=1)
+            ax.axhline(charge_eta,label=rf"$(1-\eta/\epsilon)q, \epsilon = {epsilon},\eta = {eta}$",linestyle="-.",color='red')
+            ax.axhline(charge_epsilon,label=rf"$(1-1/\epsilon)q, \epsilon = {epsilon}, \eta = 1 $",linestyle="--",color='green')
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / Volume]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if save:
+                plt.savefig(f"{name_graph}-q-q0.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{name_graph}-q-q0.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+        if host_q:
+            self.rho_host_q_array = self.rho_host_array - self.rho_defect_q_array              
+            c_avg = np.average(self.rho_host_q_array.grid*self.host_structure.volume,(0,1))
+            #c_avg = np.average(self.rho_defect_q_q0_array.grid*self.host_structure.volume,(0,1))
+            fig = plt.figure()
+            plt.title(r"$host-q$")
+            #plt.title(title_name_graph)
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$',linestyle="-",alpha=1)
+            ax.axhline(charge_eta,label=r"$(1-\eta/\epsilon)q$",linestyle="-.",color='red')
+            ax.axhline(charge_epsilon,label=r"$(1-1/\epsilon)q$",linestyle="--",color='green')
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / V]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if save:
+                plt.savefig(f"{name_graph}-h-q.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{name_graph}-h-q.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+        if host_q0:
+            self.rho_host_q0_array = self.rho_host_array - self.rho_defect_q0_array              
+            c_avg = np.average(self.rho_host_q0_array.grid*self.host_structure.volume,(0,1))
+            #c_avg = np.average(self.rho_defect_q_q0_array.grid*self.host_structure.volume,(0,1))
+            fig = plt.figure()
+            plt.title(r"$host-q_0$")
+            #plt.title(title_name_graph)
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$',linestyle="-",alpha=1)
+            ax.axhline(charge_eta,label=r"$(1-\eta/\epsilon)q$",linestyle="-.",color='red')
+            ax.axhline(charge_epsilon,label=r"$(1-1/\epsilon)q$",linestyle="--",color='green')
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / V]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if save:
+                plt.savefig(f"{name_graph}-h-q0.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{name_graph}-h-q0.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+ 

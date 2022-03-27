@@ -24,6 +24,13 @@ from .Corrections.Alignment.utils_alignment import get_total_alignment_FNV
 from .Corrections.Alignment.utils_alignment import get_total_alignment_FNV_dft_model_part
 import json
 
+from sisl import unit_convert
+from .Corrections.Alignment.utils_alignment import get_interpolation_sisl_from_array
+import numpy as np
+import matplotlib.pyplot as plt
+
+from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import shift_prepare
+
 class DefectsFormationEnergyBase:
     """
     The base class to compute the formation energy for a given defect, 
@@ -53,6 +60,7 @@ class DefectsFormationEnergyBase:
                  cutoff = None,
                  potential_align_scheme=None,
                  E_iso_type=None,
+                 avg_plane = None,
                  ):
 
         self.defect_site = defect_site 
@@ -82,7 +90,7 @@ class DefectsFormationEnergyBase:
         
         self.charge_dw_tol = charge_dw_tol
         self.E_iso_type = E_iso_type
-
+        self.avg_plane = avg_plane
         # Structures
         print("DEBUG: initializing structures")
         self.host_structure = sisl.get_sile (self.host_path / host_fdf_name).read_geometry()
@@ -92,13 +100,13 @@ class DefectsFormationEnergyBase:
         if self.host_systemlabel is None:
             self.host_systemlabel = 'siesta'
         print(f"DEBUG: System Label for host {self.host_systemlabel}")
-        self.defect_structure_neutral = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name).read_geometry()
+        self.defect_structure_neutral = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name).read_geometry(output=True)
         self.defect_structure_neutral_fdf = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name)
         self.defect_neutral_systemlabel  = self.defect_structure_neutral_fdf.get("SystemLabel")
         if self.defect_neutral_systemlabel is None:
             self.defect_neutral_systemlabel = 'siesta'
         print(f"DEBUG: System Label for host {self.defect_neutral_systemlabel}")
-        self.defect_structure_charge = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name).read_geometry()
+        self.defect_structure_charge = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name).read_geometry(output=True)
         self.defect_structure_charge_fdf = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name)
         self.defect_charge_sytemlabel = self.defect_structure_charge_fdf.get("SystemLabel") 
         if self.defect_charge_sytemlabel is None:
@@ -222,6 +230,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  potential_align_scheme = 'FNV',
                  charge_dw_tol = 1.0e-3,
                  E_iso_type = "original",
+                 avg_plane = "xy",
                  ):
     
 
@@ -249,7 +258,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  cutoff = cutoff,
                  potential_align_scheme = potential_align_scheme,
                  charge_dw_tol = charge_dw_tol,
-                 E_iso_type = E_iso_type 
+                 E_iso_type = E_iso_type,
+                 avg_plane = avg_plane
                  )
                   
         self.fit_params = fit_params
@@ -286,7 +296,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     cutoff = self.cutoff,
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
-                    E_iso_type = self.E_iso_type
+                    E_iso_type = self.E_iso_type,
+                    avg_plane = self.avg_plane
                     )
 
             self.Input_Gaussian.run()
@@ -301,10 +312,22 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             # NOTE:
             # Put it in Setup of Gaussian Class
             #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
+            if self.potential_align_scheme == "Classic":
+                self.align_h_q_model = self.Input_Gaussian.compute_alignment_h_q_model()
+            else:
+                #self.Input_Gaussian._compute_model_potential_for_alignment()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+                #self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                #self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+ 
+                #self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                #self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
 
-            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
-            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
-            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+
+                self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+                self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
 
         elif DefectsFormationEnergyBase.setup(self)=="gaussian-model-tail":
             print("Starting Gaussian Model tail Correction ..")          
@@ -326,7 +349,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     cutoff = self.cutoff,
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
-                    E_iso_type = self.E_iso_type
+                    E_iso_type = self.E_iso_type,
+                    avg_plane = self.avg_plane
                     )
 
             self.Input_Gaussian.run()
@@ -341,10 +365,22 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             # NOTE:
             # Put it in Setup of Gaussian Class
             #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
+            if self.potential_align_scheme == "Classic":
+                self.align_h_q_model = self.Input_Gaussian.compute_alignment_h_q_model()
+            else:
+                #self.Input_Gaussian._compute_model_potential_for_alignment()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+                #self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                #self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+ 
+                #self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                #self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
 
-            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
-            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
-            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+
+                self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+                self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
 
         elif DefectsFormationEnergyBase.setup(self)=="gaussian-model-general":
             print("Starting Gaussian Model General with gamma and eta Correction ..")          
@@ -368,7 +404,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     cutoff = self.cutoff,
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
-                    E_iso_type = self.E_iso_type
+                    E_iso_type = self.E_iso_type,
+                    avg_plane = self.avg_plane
                     )
 
             self.Input_Gaussian.run()
@@ -384,9 +421,17 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             # Put it in Setup of Gaussian Class
             #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
 
-            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
-            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
-            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+            if self.potential_align_scheme == "Classic":
+                self.align_h_q_model = self.Input_Gaussian.compute_alignment_h_q_model()
+            else:
+                #self.Input_Gaussian._compute_model_potential_for_alignment()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+                #self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                #self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+ 
+                self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+                self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
 
 
         elif DefectsFormationEnergyBase.setup(self)=="gaussian-rho":
@@ -410,6 +455,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     fit_params = self.fit_params,
                     potential_align_scheme = self.potential_align_scheme,
                     E_iso_type = self.E_iso_type,
+                    avg_plane = self.avg_plane
                     )
             self.Input_Gaussian.run()
 
@@ -423,9 +469,13 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             # NOTE:
             # Put it in Setup of Gaussian Class
             #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
-
-            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
-            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+            if self.potential_align_scheme == "Classic":
+                self.align_h_q_model = self.Input_Gaussian.compute_alignment_h_q_model()
+            else:
+                #self.Input_Gaussian._compute_model_potential_for_alignment()
+                #self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+                self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
           
         elif DefectsFormationEnergyBase.setup(self)=="rho":
             print("Starting Rho Correction ..")          
@@ -449,7 +499,8 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     cutoff = self.cutoff,
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
-                    E_iso_type = self.E_iso_type
+                    E_iso_type = self.E_iso_type,
+                    avg_plane = self.avg_plane
                     )
             self.Input_Gaussian.run()
 
@@ -463,12 +514,15 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             # NOTE:
             # Put it in Setup of Gaussian Class
             #self.Input_Gaussian.compute_dft_difference_potential_q_q0()
-
-            self.Input_Gaussian._compute_model_potential_for_alignment()
-            self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
-            self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
-            self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
-
+            
+            if self.potential_align_scheme == "Classic":
+                self.align_h_q_model = self.Input_Gaussian.compute_alignment_h_q_model()
+            else:
+                self.Input_Gaussian._compute_model_potential_for_alignment()
+                self.align_host_q0 = self.Input_Gaussian.compute_alignment_host_q0()
+                self.align_q_q0 = self.Input_Gaussian.compute_alignment_q_q0()
+                self.align_model_q_q0 = self.Input_Gaussian.compute_alignment_model_q_q0()
+ 
 
     def Check(self):
         print ("Checking ")
@@ -550,6 +604,10 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         """
         self.fermi_level = fermi
 
+    #def calculate_total_alignment_classic(self):
+    #    """
+    #    """
+    #    self.total_alignment = 
 
     def calculate_total_alignment_density_weighted(self):
         """
@@ -663,15 +721,30 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         """
 
         """
-        #from utils_alignment import get_total_correction
-        
-        #self.total_correction = get_total_correction(self.iso_energy,self.total_alignment )
-        self.total_correction = get_total_correction( self.Input_Gaussian.model_correction_energies[1] , self.total_alignment )
+        if self.potential_align_scheme == "Classic" and self.correction_scheme == "rho":
+            print("DEBUG:Classic,rho")
+            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] - (self.align_h_q_model * self.defect_charge)
+        if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model-tail":
+            print("DEBUG:Classic,gaussian-model-tail")
+            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+        if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model":
+            print("DEBUG:Classic,gaussian-model")
+            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+
 
         print ("Total Correction Energy (includeing Alignment) is {}".format(self.total_correction))
 
         #return self.total_correction
 
+    def calculate_total_correction_old(self):
+        """
+        """
+        #from utils_alignment import get_total_correction
+        
+        #self.total_correction = get_total_correction(self.iso_energy,self.total_alignment )
+ 
+        self.total_correction = get_total_correction( self.Input_Gaussian.model_correction_energies[1] , self.total_alignment )
+        print ("Total Correction Energy (includeing Alignment) is {}".format(self.total_correction))
 
     def calculate_uncorrected_formation_energy(self):
         """
@@ -684,6 +757,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         
         #self.valence_band_maximum = self.host_vbm 
         self.valence_band_maximum = self.host_vbm + self.host_fermi 
+        print(f"DEBUG: Fermi level set to VBM:{self.valence_band_maximum} , fermi level :{self.fermi_level} ")
         self.uncorrected_fe = get_raw_formation_energy( defect_energy = self.defect_q_Energy, 
                                                    host_energy = self.host_Energy, 
                                                    add_or_remove = self.add_or_remove, 
@@ -788,3 +862,127 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
 
         print(f"Data Dumped in File {filename}!")
         print("DONE")
+
+    def plot_V(self,
+            hq=True,
+            hqq0=False,
+            model=True,
+            hqmodel=True,
+            hq0=False,
+            qq0=True,
+            qq0model=False,
+            avg_plane=None,
+            title=r"$Title $"
+            ):
+        """
+
+            title=r"$2\times2\times2\ unrelax\ V_O^{\bullet\bullet} $"
+        """
+        if avg_plane is None:
+            print("Using user avg plane...")
+            avg_plane = self.avg_plane
+        if avg_plane =='xy':
+            plane = (0,1) 
+        if avg_plane =='xz':
+            plane = (0,2) 
+        if avg_plane =='yz':
+            plane = (1,2) 
+
+        print(f"Averaging Plane is {avg_plane}")
+        V_hq= (self.Input_Gaussian.v_host_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH
+        V_qq0= (self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH *4.0
+        V_q0h= self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_host_array
+        V_qq0_q0h = V_qq0+V_q0h
+        V_model_fix = get_interpolation_sisl_from_array(input_array=self.Input_Gaussian.v_model[1],
+                target_shape=V_hq.shape)
+        V_model = sisl.Grid(shape=V_model_fix.shape,
+                geometry=self.Input_Gaussian.host_structure)
+        V_model.grid = V_model_fix.real /unit_convert("Bohr","Ang")**3
+        #===================================
+        # Taking Planer AVG
+        #===================================
+        V_hq_avg = np.average(V_hq.grid,plane)
+        V_q0h_avg = np.average(V_q0h.grid,plane)
+        V_qq0_avg = np.average(V_qq0.grid,plane)
+        V_model_avg = np.average(V_model.grid.real,plane)
+   
+        print(f"Alignment {(V_hq_avg - V_model_avg )[int(V_hq_avg.shape[0]/2)]}")
+
+        if avg_plane =='xy':
+            x = np.linspace(0,V_hq.dcell[2][2]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+        if avg_plane =='xz':
+            x = np.linspace(0,V_hq.dcell[1][1]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+        if avg_plane =='yz':
+            x = np.linspace(0,V_hq.dcell[0][0]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+
+
+        #===================================
+        # Ploting
+        #===================================
+        fig = plt.figure()
+        ax = plt.subplot(111)
+        epsilon = r"$\epsilon_{\infty}=$"+f"${self.epsilon}$"
+        plt.title(title)
+        #================================================
+        if hq:
+            ax.plot(x,V_hq_avg,label=r"$V_{pristine,q}$")
+        if qq0:
+            ax.plot(x,V_qq0_avg,label=r"$V_{q,q0}$")
+        if model:
+            ax.plot(x,V_model_avg,label=r"$V_{\rho}^{model\ DFT}$")
+        if hq0:
+            ax.plot(x,V_q0h_avg,label=r"$V_{q0,pristine}$")
+        if hqmodel:
+            ax.plot(x,V_hq_avg-V_model_avg,label=r"$(V_{pristine,q}-V_{\rho}^{model\ DFT})$")
+        if hqq0:
+            ax.plot(x,V_hq_avg-V_qq0_avg,label=r"$(V_{pristine,q}-V_{\rho}^{q,q0})$")
+        #ax.plot(V_hqr_avg,label=r"$V_{pristine,q}^{relax}$")
+        #ax.plot(V_model_s_avg,label=r"$V_{\rho}^{model\ DFT stats}$")
+        #ax.plot(V_hqr_avg-V_model_avg,label=r"$(V_{pristine,q}^{relax}-V_{\rho}^{model\ DFT})$")
+        #ax.plot(V_model_avg-V_qq0_avg,label=r"$(V_{model}-V_{\rho}^{q,q0})$")
+        if qq0model:
+            ax.plot(x,V_qq0_avg-V_model_avg,label=r"$(V_{\rho}^{q,q0}-V_{model})$")
+        ax.axhline(linestyle="--",color="black")
+        ax.set_ylabel(r"$Energy\ [eV]$")
+        ax.set_xlabel(r"$Distance\ [\mathring{A}]$")
+
+        ax.annotate(f"Alignment : {np.round((V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)],decimals=4)} eV", 
+            #xy=(int(V_model_avg.shape[0]/2), (V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)]), 
+            #xytext=(int(V_model_avg.shape[0]/2), V_hq_avg.min()),
+            xy=(x[int(x.shape[0]/2)], (V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)]), 
+            xytext=(x[int(x.shape[0]/2)], V_hq_avg.min()),
+ 
+            arrowprops=dict(arrowstyle="->"))
+        # Shrink current axis by 20%
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0,box.width * 0.68, box.height])
+        #ax.set(ylim=(-4.0,1.0))
+        # Put a legend to the right of the current axis
+
+        ax.legend(title=epsilon,loc='center left', bbox_to_anchor=(1, 0.5))
+
+
+    def write_charge(self,file_name="defect_rho"):
+        """
+        """
+        from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import shift_prepare
+        from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import get_shift_initial_rho_model
+        
+        if self.defect_charge > 0:
+            c = int(self.defect_charge)
+            name = f"{file_name}-p{c}.XSF"
+            name_s = f"{file_name}-p{c}-shift.XSF"
+        
+        if self.defect_charge < 0:
+            c = int(self.defect_charge) 
+            name = f"{file_name}-e{c}.XSF"
+            name_s = f"{file_name}-e{c}-shift.XSF"
+
+
+        self.Input_Gaussian.rho_defect_q_q0_array.set_geometry(self.defect_structure_charge)
+        self.Input_Gaussian.rho_defect_q_q0_array.write(name)
+
+        s = shift_prepare(self.defect_site,self.Input_Gaussian.rho_defect_q_q0_array)
+        rho_s = get_shift_initial_rho_model(self.Input_Gaussian.rho_defect_q_q0_array.grid,s,self.defect_structure_charge)
+        rho_s.write(name_s)
+

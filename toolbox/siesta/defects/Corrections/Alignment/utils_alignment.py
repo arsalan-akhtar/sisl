@@ -7,7 +7,7 @@
 ########################################################################################
 
 import numpy as np
-
+from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import shift_prepare
 """
 Utility functions for the potential alignment workchain
 """
@@ -391,5 +391,26 @@ def get_density_weighted_potential(potential_difference, charge_density, toleran
     #alignment = np.average(np.abs(v_diff_masked))
 
     return v_diff_masked
+
+def get_alignment_classic(V_hq,V_model,pot_site,avg_plane):
+    """
+    """
+    if avg_plane =='xy':
+        plane = (0,1)
+    if avg_plane =='xz':
+        plane = (0,2)
+    if avg_plane =='yz':
+        plane = (1,2)
+    print(f"Averaging Plane is {avg_plane}")
+    #===================================
+    # Taking Planer AVG
+    #===================================
+    V_hq_avg = np.average(V_hq,plane)
+    V_model_avg = np.average(V_model.real,plane)
+
+    #V_mid = shift_prepare(pot_site,V_hq)
+
+    #return (V_hq_avg-V_model_avg)[pot_site]
+    return (V_hq_avg-V_model_avg)[int(V_hq_avg.shape[0]/2)]
 
 

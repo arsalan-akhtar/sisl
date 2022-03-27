@@ -12,7 +12,9 @@ def get_charge_model_sigma(limits,
                   dimensions,
                   defect_position,
                   sigma,
-                  charge):
+                  charge,
+                  cell_matrix = None,
+                  ):
     """
     For a given system charge, create a model charge distribution.
     The charge model for now is a Gaussian.
@@ -56,7 +58,8 @@ def get_charge_model_sigma(limits,
 
     # Scale the charge density to the desired charge
     #int_charge_density = np.trapz(np.trapz(np.trapz(g, i), j), k)
-    int_charge_density = get_integral(g, dimensions, limits)
+    int_charge_density = get_integral(g, dimensions, limits)  # old for backup
+    #int_charge_density = get_integral_new( g ,cell_matrix  )
     print(
         "DEBUG: Integrated charge density (g) = {}".format(int_charge_density))
     g = g / (int_charge_density / charge)
@@ -64,10 +67,12 @@ def get_charge_model_sigma(limits,
     # Compensating jellium background
     print("DEBUG: Integrated charge density (scaled_g) = {}".format(
         get_integral(g, dimensions, limits)))
+        #get_integral_new(g, cell_matrix)))
 
     #scaled_g = scaled_g - np.sum(scaled_g)/np.prod(scaled_g.shape)
     print("DEBUG: Integrated charge density (jellium) = {}".format(
         get_integral(g, dimensions, limits)))
+        #get_integral_new(g,  cell_matrix)))
 
     # Pack the array
     #model_charge_array = orm.ArrayData()
@@ -221,6 +226,17 @@ def get_integral(data, dimensions, limits):
     volume_element = np.prod(limits / dimensions)
     return np.sum(data) * volume_element
 
+def get_integral_new(data, cell_matrix):
+    """
+    Get the integral of a uniformly spaced 3D data array by rectangular rule.
+    Works better than trapezoidal or Simpson's rule for sharpely peaked coarse grids.
+    """
+    a = cell_matrix[0]
+    b = cell_matrix[1]
+    c = cell_matrix[2]
+    cell_vol = np.dot(np.cross(a, b), c)
+    element_volume = cell_vol / np.prod(data.shape)
+    return np.sum(data) * element_volume
 
 
 
