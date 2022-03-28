@@ -30,6 +30,7 @@ class SurfacesBase:
     relaxed                      :
     """
     def __init__(self,
+                 bulk_structure = None,
                  bulk_path = None,
                  bulk_fdf_name = None,
                  surface_direction = None,
@@ -39,6 +40,7 @@ class SurfacesBase:
                  ghost = False,
                  ):
 
+        self.bulk_structure = bulk_structure
         self.bulk_path = bulk_path
         self.bulk_fdf_name = bulk_fdf_name
         self.surface_direction = surface_direction
@@ -86,15 +88,15 @@ class SurfacesBase:
         #--------------------------------------------------------------------------------------
         #            To Test
         #--------------------------------------------------------------------------------------
-        from surface_generator.surface_generator_wk  import (SurfaceGeneratorWorkChain)
+        #from surface_generator.surface_generator_wk  import (SurfaceGeneratorWorkChain)
         
         #self.Surface_Generation = SurfaceGeneratorWorkChain(bulk_structure =  self.bulk_structure,
-        self.Surface = SurfaceGeneratorWorkChain(bulk_structure =  self.bulk_structure,
-                                                  surface_direction = self.surface_direction,
-                                                  number_of_layers = self.number_of_layers,
-                                                  vacuum_axis = self.vacuum_axis,
-                                                  vacuum_amount =  self.vacuum_amount
-                )
+        #self.Surface = SurfaceGeneratorWorkChain(bulk_structure =  self.bulk_structure,
+        #                                          surface_direction = self.surface_direction,
+        #                                          number_of_layers = self.number_of_layers,
+        #                                          vacuum_axis = self.vacuum_axis,
+        #                                          vacuum_amount =  self.vacuum_amount
+        #        )
       
     #----------------
     # Generating Slab
@@ -147,54 +149,46 @@ class Surfaces(SurfacesBase):
 
     """
     def __init__(self,
-                 bulk_path = None,
-                 bulk_output_name = None,
                  bulk_structure = None,
-                 slab_structures = None,
-                 pseudos_path = None,
-                 flos_path = None,
+                 bulk_path = None,
+                 bulk_fdf_name = None,
                  surface_direction = None,
                  vacuum_axis = None,
                  vacuum_amount = None,
-                 relaxed_bulk_structure = None,
                  ghost = None,
-                 flos_file_name_relax = None,
-                 relax_engine = 'lua',
+                 bulk_output_name = None,
+                 slab_structures = None,
+                 relaxed_bulk_structure = None,
                  relaxed = None,
                  results_folders = None,
-                 bulk_input_name = None,
                  number_of_layers = 20, # None,
                  number_of_ghost_layer_top = 1,
                  number_of_ghost_layer_bottom = 1,
                  type_of_surface_species = "diffuse",
-                 name_of_surface_species = "surface"
+                 name_of_surface_species = "surface"            
                  ):
 
-        self.bulk_input_name = bulk_input_name 
+        #self.bulk_input_name = bulk_input_name 
         self.bulk_output_name = bulk_output_name
-        self.type_of_surface_species = type_of_surface_species
-        self.name_of_surface_species = name_of_surface_species
+        self.slab_structures = slab_structures
+        self.relaxed_bulk_structure = relaxed_bulk_structure
+        self.relaxed = relaxed
+        self.results_folders = results_folders
+        self.number_of_layers = number_of_layers
         self.number_of_ghost_layer_top = number_of_ghost_layer_top
         self.number_of_ghost_layer_bottom = number_of_ghost_layer_bottom
-       
+        self.type_of_surface_species = type_of_surface_species
+        self.name_of_surface_species = name_of_surface_species
+      
         super().__init__(
-                         bulk_path,
-                         bulk_input_name,
-                         bulk_output_name,
-                         bulk_structure,
-                         slab_structures,
-                         pseudos_path,
-                         flos_path,
-                         surface_direction,
-                         vacuum_axis,
-                         vacuum_amount,
-                         relaxed_bulk_structure,
-                         results_folders,
-                         number_of_layers,
-                         flos_file_name_relax,
-                         relax_engine ,
-                         relaxed,
-                         ghost,
+                 bulk_structure = bulk_structure,
+                 bulk_path = bulk_path,
+                 bulk_fdf_name = bulk_fdf_name,
+                 surface_direction = surface_direction,
+                 vacuum_axis = surface_direction,
+                 vacuum_amount = surface_direction,
+                 number_of_layers = number_of_layers,
+                 ghost = ghost,
                          )
         #self.relax_engine = relax_engine
         
@@ -229,6 +223,18 @@ class Surfaces(SurfacesBase):
     #    """
     #
     #    self.results_folders = results_folders
+
+    def Genarate_Slabs_Pymatgen(self):
+        """
+        """
+        from pymatgen.core.surface import SlabGenerator 
+        from pymatgen.core.surface import generate_all_slabs
+
+        print ("Generating Slabs Using PyMatgen Lib")
+
+        Pymatgen_Structure = AseAtomsAdaptor.get_structure(self.bulk_structure.toASE())
+        All_slabs = generate_all_slabs (Pymatgen_Structure,max_index=1,min_slab_size=10,min_vacuum_size=10,max_normal_search=True,center_slab=True)
+
 
     def Generate_Slabs(self):
         """ 
