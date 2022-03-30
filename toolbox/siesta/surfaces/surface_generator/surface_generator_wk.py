@@ -23,7 +23,8 @@ class SurfaceGeneratorWorkChain():
         self.vacuum_axis = vacuum_axis
         self.vacuum_amount = vacuum_amount 
         self.debug_slab = debug_slab
-
+        
+        print("SurfaceGeneratorWorkChain initialized ...")
 
     def set_debug_slab(self,debug_slab=True):
         self.debug_slab = debug_slab

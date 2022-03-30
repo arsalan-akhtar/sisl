@@ -173,6 +173,36 @@ def FixingSislWithIndex_BUG_TODELETE(SislStructure,SpeciesfromASE):
     return Test
 
 
+def AllIndexesReturn_PyMatgen(SislStructure_First,SislStructure_Second):
+    """
+    SislStructure_First  : n layer Structure
+    SislStructure_Second : either 2n+1 or 2n layer
+    """
+    import numpy as np
+    Indexes={}
+
+    CenterIndexes = np.array([],dtype=int)
+    for j in range(SislStructure_First.na):
+        for i in range(SislStructure_Second.na):
+
+            if (np.allclose(SislStructure_First.xyz[j], SislStructure_Second.xyz[i])):
+                print(i,np.allclose(SislStructure_First.xyz[j], SislStructure_Second.xyz[i]))
+                CenterIndexes = np.append(CenterIndexes,i)
+
+    AllIndexes = np.array(range(0,SislStructure_Second.na))
+
+    GhostIndexes = np.delete(AllIndexes,CenterIndexes)
+    SurfaceGhostsIndex = GhostIndexes
+    print ("Surface Indexes: {}".format(SurfaceGhostsIndex))
+    print ("Center Indexes: {}".format(CenterIndexes))
+    print ("Ghost Indexes: {}".format(GhostIndexes))
+    Indexes['All'] = AllIndexes
+    Indexes['Surface'] = SurfaceGhostsIndex
+    Indexes['Center'] = CenterIndexes
+    Indexes['Ghost'] = GhostIndexes
+
+    return Indexes
+
 def AllIndexesReturn(SislStructure_First,SislStructure_Second):
 
     """
