@@ -15,6 +15,7 @@ from .utils_defects import (
     get_output_total_electrons_manual,
     get_vbm_siesta_manual_bands,
     get_fermi_siesta_from_fdf,
+    get_formation_energy_neutral,
 )
 
 from .Corrections.Gaussian.gaussian_countercharge_model import GaussianCharge
@@ -37,7 +38,7 @@ class DefectsFormationEnergyBase:
     """
     def __init__(self,
                  host_path,
-                 neutral_defect_path,
+                 neutralize_defect_path,
                  charge_defect_path,
                  add_or_remove,
                  defect_site,
@@ -53,14 +54,17 @@ class DefectsFormationEnergyBase:
                  eta = None,
                  host_fdf_name  = None,
                  neutral_defect_fdf_name = None,
+                 neutralize_defect_fdf_name = None,
                  charge_defect_fdf_name = None,
                  host_output_name = None,
                  neutral_defect_output_name = None,
+                 neutralize_defect_output_name = None,
                  charge_defect_output_name = None,
                  cutoff = None,
                  potential_align_scheme=None,
                  E_iso_type=None,
                  avg_plane = None,
+                 neutral_defect_path="./",
                  ):
 
         self.defect_site = defect_site 
@@ -78,34 +82,65 @@ class DefectsFormationEnergyBase:
         self.model_iterations_required = model_iterations_required
         self.host_path = pathlib.Path(host_path)
         self.neutral_defect_path = pathlib.Path(neutral_defect_path)
+        self.neutralize_defect_path = pathlib.Path(neutralize_defect_path)
         self.charge_defect_path = pathlib.Path(charge_defect_path)
         
         self.host_fdf_name = host_fdf_name
         self.neutral_defect_fdf_name = neutral_defect_fdf_name 
+        self.neutralize_defect_fdf_name = neutralize_defect_fdf_name 
         self.charge_defect_fdf_name = charge_defect_fdf_name
         
         self.host_output_name  = host_output_name
         self.neutral_defect_output_name = neutral_defect_output_name 
+        self.neutralize_defect_output_name = neutralize_defect_output_name 
         self.charge_defect_output_name = charge_defect_output_name 
         
         self.charge_dw_tol = charge_dw_tol
         self.E_iso_type = E_iso_type
         self.avg_plane = avg_plane
-        # Structures
-        print("DEBUG: initializing structures")
+        
+        #--------------------
+        # Structure For Host
+        #--------------------
+        
+        print("DEBUG: initializing structure for Host")
         self.host_structure = sisl.get_sile (self.host_path / host_fdf_name).read_geometry()
         self.host_structure_fdf = sisl.get_sile (self.host_path / host_fdf_name)
-
         self.host_systemlabel = self.host_structure_fdf.get("SystemLabel")
         if self.host_systemlabel is None:
             self.host_systemlabel = 'siesta'
         print(f"DEBUG: System Label for host {self.host_systemlabel}")
-        self.defect_structure_neutral = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name).read_geometry(output=True)
-        self.defect_structure_neutral_fdf = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name)
-        self.defect_neutral_systemlabel  = self.defect_structure_neutral_fdf.get("SystemLabel")
-        if self.defect_neutral_systemlabel is None:
-            self.defect_neutral_systemlabel = 'siesta'
-        print(f"DEBUG: System Label for host {self.defect_neutral_systemlabel}")
+        
+        #----------------------
+        # Structure For Neutral
+        #----------------------
+        if self.neutral_defect_path.exists():
+            print("DEBUG: initializing structure for Defect Neutral")
+            self.defect_structure_neutral = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name).read_geometry(output=True)
+            self.defect_structure_neutral_fdf = sisl.get_sile (self.neutral_defect_path / neutral_defect_fdf_name)
+            self.defect_neutral_systemlabel  = self.defect_structure_neutral_fdf.get("SystemLabel")
+            if self.defect_neutral_systemlabel is None:
+                self.defect_neutral_systemlabel = 'siesta'
+            print(f"DEBUG: System Label for host {self.defect_neutral_systemlabel}")
+        else:
+            print("Not Found Neutral Passing initializing structure for Defect Neutral ...!")
+
+        #-------------------------
+        # Structure For Neutralize
+        #-------------------------
+        print("DEBUG: initializing structure for Defect Neutralize")
+        self.defect_structure_neutralize = sisl.get_sile (self.neutralize_defect_path / neutralize_defect_fdf_name).read_geometry(output=True)
+        self.defect_structure_neutralize_fdf = sisl.get_sile (self.neutralize_defect_path / neutralize_defect_fdf_name)
+        self.defect_neutralize_systemlabel  = self.defect_structure_neutralize_fdf.get("SystemLabel")
+        if self.defect_neutralize_systemlabel is None:
+            self.defect_neutralize_systemlabel = 'siesta'
+        print(f"DEBUG: System Label for Defect Neutralize {self.defect_neutralize_systemlabel}")
+
+        #----------------------
+        # Structure For Defect
+        #----------------------
+ 
+        print("DEBUG: initializing structure for Host")
         self.defect_structure_charge = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name).read_geometry(output=True)
         self.defect_structure_charge_fdf = sisl.get_sile(self.charge_defect_path / charge_defect_fdf_name)
         self.defect_charge_sytemlabel = self.defect_structure_charge_fdf.get("SystemLabel") 
@@ -114,20 +149,23 @@ class DefectsFormationEnergyBase:
         print(f"DEBUG: System Label for charge defect {self.defect_charge_sytemlabel}")
         self.add_or_remove = add_or_remove
 
+        #self.defect_structure_neutralize_fdf = sisl.get_sile (self.neutralize_defect_path / neutral_defect_fdf_name)
+        #self.defect_structure_neutralize = sisl.get_sile (self.neutralize_defect_path / neutral_defect_fdf_name).read_geometry(output=True)
         
         # VTs
         print("DEBUG: initializing VTs for host")
         self.host_VT =  sisl.get_sile(self.initialize_potential ( self.host_path , self.host_systemlabel ))
-        print("DEBUG: initializing VTs for neutral defect")
-        self.defect_q0_VT = sisl.get_sile( self.initialize_potential ( self.neutral_defect_path , self.defect_neutral_systemlabel ))
+        print("DEBUG: initializing VTs for neutralize defect")
+        self.defect_q0_VT = sisl.get_sile( self.initialize_potential ( self.neutralize_defect_path , self.defect_neutralize_systemlabel ))
         print("DEBUG: initializing VTs for charge defect")
         self.defect_q_VT = sisl.get_sile(self.initialize_potential (self.charge_defect_path , self.defect_charge_sytemlabel) )
+
         
         # If Rho's Needed
         if self.correction_scheme == 'gaussian-rho' or self.correction_scheme == 'rho':
             print("DEBUG: initializing Rhos ...")
             self.rho_host = sisl.get_sile(self.initialize_rho( self.host_path, self.host_systemlabel))
-            self.rho_defect_q0 = sisl.get_sile(self.initialize_rho ( self.neutral_defect_path , self.defect_neutral_systemlabel ))
+            self.rho_defect_q0 = sisl.get_sile(self.initialize_rho ( self.neutralize_defect_path , self.defect_neutralize_systemlabel ))
             self.rho_defect_q = sisl.get_sile( self.initialize_rho (self.charge_defect_path , self.defect_charge_sytemlabel))
 
     def initialize_potential(self,path,label):
@@ -206,7 +244,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
     """
     def __init__(self,
                  host_path,
-                 neutral_defect_path,
+                 neutralize_defect_path,
                  charge_defect_path,
                  add_or_remove,
                  defect_site,
@@ -221,9 +259,11 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  eta = None,
                  host_fdf_name ='input.fdf',
                  neutral_defect_fdf_name = 'input.fdf',
+                 neutralize_defect_fdf_name = 'input.fdf',
                  charge_defect_fdf_name = 'input.fdf',
                  host_output_name  = 'output.out',
                  neutral_defect_output_name = 'output.out',
+                 neutralize_defect_output_name = 'output.out',
                  charge_defect_output_name = 'output.out',
                  cutoff = None,
                  fit_params = None,
@@ -231,12 +271,14 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  charge_dw_tol = 1.0e-3,
                  E_iso_type = "original",
                  avg_plane = "xy",
+                 neutral_defect_path="./",
                  ):
     
 
 
         super().__init__(host_path = host_path,
                  neutral_defect_path = neutral_defect_path ,
+                 neutralize_defect_path = neutralize_defect_path ,
                  charge_defect_path  = charge_defect_path,
                  add_or_remove = add_or_remove,
                  defect_site = defect_site ,
@@ -251,9 +293,11 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  model_iterations_required = model_iterations_required,
                  host_fdf_name = host_fdf_name,
                  neutral_defect_fdf_name = neutral_defect_fdf_name ,
+                 neutralize_defect_fdf_name = neutralize_defect_fdf_name ,
                  charge_defect_fdf_name = charge_defect_fdf_name ,
                  host_output_name  = host_output_name,
                  neutral_defect_output_name = neutral_defect_output_name,
+                 neutralize_defect_output_name = neutralize_defect_output_name,
                  charge_defect_output_name = neutral_defect_output_name,
                  cutoff = cutoff,
                  potential_align_scheme = potential_align_scheme,
@@ -551,44 +595,56 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         """
         self.host_Energy = get_output_energy_manual(path_dir = self.host_path,
                                                     output_name = self.host_output_name)
-        self.defect_q0_Energy = get_output_energy_manual(path_dir = self.neutral_defect_path,
+        if self.neutral_defect_path.exists():
+            self.defect_0_Energy = get_output_energy_manual(path_dir = self.neutral_defect_path,
+                                                        output_name = self.neutral_defect_output_name) 
+
+        self.defect_q0_Energy = get_output_energy_manual(path_dir = self.neutralize_defect_path,
                                                          output_name = self.neutral_defect_output_name) 
         self.defect_q_Energy = get_output_energy_manual( path_dir = self.charge_defect_path,
                                                          output_name = self.charge_defect_output_name)
 
         self.host_NE = get_output_total_electrons_manual(path_dir = self.host_path, 
-                                                         output_name = self.neutral_defect_output_name )
-        self.defect_q0_NE = get_output_total_electrons_manual(path_dir = self.neutral_defect_path,
+                                                         output_name = self.host_output_name )
+        # For Neutral Case
+        if self.neutral_defect_path.exists():
+            self.defect_0_NE = get_output_total_electrons_manual(path_dir = self.neutral_defect_path,
                                                               output_name = self.neutral_defect_output_name)
+        # For Neutralize Case
+        self.defect_q0_NE = get_output_total_electrons_manual(path_dir = self.neutralize_defect_path,
+                                                              output_name = self.neutral_defect_output_name)
+        # For Charge Case
         self.defect_q_NE = get_output_total_electrons_manual(path_dir = self.charge_defect_path,
                                                               output_name = self.charge_defect_output_name)
 
         self.host_vbm = get_vbm_siesta_manual_bands(path_dir = self.host_path, 
                                                     fdf_name = self.host_fdf_name,
                                                     NE = self.host_NE )
-        self.defect_q0_vbm = get_vbm_siesta_manual_bands(path_dir = self.neutral_defect_path,
-                                                         fdf_name = self.neutral_defect_fdf_name,
-                                                         NE = self.defect_q0_NE )
-        self.defect_q_vbm = get_vbm_siesta_manual_bands( path_dir = self.charge_defect_path,
-                                                         fdf_name = self.charge_defect_fdf_name,
-                                                         NE = self.defect_q0_NE )
+        #self.defect_q0_vbm = get_vbm_siesta_manual_bands(path_dir = self.neutral_defect_path,
+        #                                                 fdf_name = self.neutral_defect_fdf_name,
+        #                                                 NE = self.defect_q0_NE )
+        #self.defect_q_vbm = get_vbm_siesta_manual_bands( path_dir = self.charge_defect_path,
+        #                                                 fdf_name = self.charge_defect_fdf_name,
+        #                                                 NE = self.defect_q0_NE )
         
         self.host_fermi = get_fermi_siesta_from_fdf( path_dir = self.host_path,
                                                      fdf_name = self.host_fdf_name)
-        self.defect_q0_fermi = get_fermi_siesta_from_fdf( path_dir = self.neutral_defect_path,
-                                                          fdf_name = self.neutral_defect_fdf_name)
+        self.defect_q0_fermi = get_fermi_siesta_from_fdf( path_dir = self.neutralize_defect_path,
+                                                          fdf_name = self.neutralize_defect_fdf_name)
         self.defect_q_fermi = get_fermi_siesta_from_fdf( path_dir = self.charge_defect_path,
                                                          fdf_name = self.charge_defect_fdf_name)
 
 
         print("======================================= SIESTA DATA =====================================") 
         print("Host Energy    : {} with Total Numeber of Electrons : {}".format(self.host_Energy,self.host_NE))
-        print("Defect Neutral : {} with Total Numeber of Electrons : {}".format(self.defect_q0_Energy,self.defect_q0_NE))
+        if self.neutral_defect_path.exists():
+            print("Defect Neutral : {} with Total Numeber of Electrons : {}".format(self.defect_0_Energy,self.defect_0_NE))
+        print("Defect Neutralize : {} with Total Numeber of Electrons : {}".format(self.defect_q0_Energy,self.defect_q0_NE))
         print("Defect Charged : {} with Total Numeber of Electrons : {}".format(self.defect_q_Energy, self.defect_q_NE))
         print(".........................................................................................")
         print("Host           VBM {} ".format(self.host_vbm))
-        print("Neutral Defect VBM {} ".format(self.defect_q0_vbm))
-        print("Charged Defect VBM {} ".format(self.defect_q_vbm))
+        #print("Neutral Defect VBM {} ".format(self.defect_q0_vbm))
+        #print("Charged Defect VBM {} ".format(self.defect_q_vbm))
         print(".........................................................................................")
         print("Host           Fermi Energy {} [eV] ".format(self.host_fermi))        
         print("Neutral Defect Fermi Energy {} [eV] ".format(self.defect_q0_fermi))        
@@ -780,6 +836,16 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         print ("Corrected Formation Energy : {}".format(self.corrected_fe))
 
 
+    def calculate_formation_energy_neutral(self):
+        """
+        """
+
+        self.neutral_fe = get_formation_energy_neutral(defect_energy = self.defect_0_Energy,
+                                                   host_energy = self.host_Energy,
+                                                   add_or_remove = self.add_or_remove,
+                                                   chemical_potential = self.chemical_potential)
+
+        print ("Formation Energy Neutral: {} ".format(self.neutral_fe))
 
     def SinglePhaseDiagram(self,Emin,Emax,number_of_points=100,Save=True,font=None,specie_name=None,dump_data=True):
         """
@@ -863,7 +929,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         print(f"Data Dumped in File {filename}!")
         print("DONE")
 
-    def plot_V(self,
+    def Plot_V(self,
             hq=True,
             hqq0=False,
             model=True,
@@ -872,12 +938,16 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             qq0=True,
             qq0model=False,
             avg_plane=None,
-            title=r"$Title $"
+            title=r"$Title $",
+            save=False,
+            dpi_size=800,
+            file_name="potential",
             ):
         """
 
             title=r"$2\times2\times2\ unrelax\ V_O^{\bullet\bullet} $"
         """
+        file_name = f"{file_name}-{self.defect_charge}"
         if avg_plane is None:
             print("Using user avg plane...")
             avg_plane = self.avg_plane
@@ -960,7 +1030,11 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         # Put a legend to the right of the current axis
 
         ax.legend(title=epsilon,loc='center left', bbox_to_anchor=(1, 0.5))
+        if save:
+            plt.savefig(f'{file_name}.png', dpi=dpi_size, bbox_inches='tight' )
+            plt.savefig(f'{file_name}.jpeg', dpi=dpi_size, bbox_inches='tight')
 
+        plt.show()
 
     def write_charge(self,file_name="defect_rho"):
         """
@@ -986,3 +1060,54 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         rho_s = get_shift_initial_rho_model(self.Input_Gaussian.rho_defect_q_q0_array.grid,s,self.defect_structure_charge)
         rho_s.write(name_s)
 
+    @staticmethod
+    def Plot_Phase_Diagram(PhaseData_name,label,title_name=r"$Phase\ Diagram$",file_name="phase_diagram",dpi_size=800,save=False,neutral_formation=None,neutral_label=r"$Neutral$",x_min=None,x_max=None,y_min=None,y_max=None ):
+        """
+        Static Method for Ploting Phase Diagram
+        PhasData_name : Dictionay
+        label : Dictionay
+        title_name : Dictionay
+        EX : 
+           PhaseData_name = {'p1':"Oxygen-remove-p1.0-PhaseData.npy",
+                             'p2':"Oxygen-remove-p2.0-PhaseData.npy",}        
+           label = [r"$V_{O}^{+1}$",r"$V_{O}^{+2}$"]
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+    
+        ind= []
+        fe = np.array([])
+        for k,v in PhaseData_name.items():
+            print(k)
+            ind.append(k)
+            fe=np.append(fe,np.load(v,allow_pickle=True))
+        fig = plt.figure()
+        ax = plt.subplot(111)
+        plt.title(f"{title_name}")
+        count = 0
+        for k,v in PhaseData_name.items():
+            #print(k)
+            fe=np.append(fe,np.load(v,allow_pickle=True))
+            ax.plot(fe[count]['Energy'],fe[count]['Formation'],label=label[count])
+            count = count+1
+        if neutral_formation is not None :
+            ax.axhline(neutral_formation,color='black',label=neutral_label)
+        # Shrink current axis by 20%
+        ax.set_xlabel(xlabel=r'$\mu\ [eV]$')
+        ax.set_ylabel(ylabel= r'$Formation\ Energy\ \ [eV]$')
+
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        #ax.set(ylim=(3,7.0))
+        # Put a legend to the right of the current axis
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        if y_min is not None and y_max is not None:
+            ax.set(ylim=(y_min,y_max))
+        if x_min is not None and x_max is not None:
+            ax.set(xlim=(x_min,x_max)) 
+        #f.tight_layout()
+        if save:
+            plt.savefig(f'{file_name}.png', dpi=dpi_size, bbox_inches='tight' )
+            plt.savefig(f'{file_name}.jpeg', dpi=dpi_size, bbox_inches='tight')
+
+        plt.show()

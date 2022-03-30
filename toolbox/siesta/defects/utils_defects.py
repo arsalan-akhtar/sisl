@@ -98,4 +98,18 @@ def get_corrected_aligned_formation_energy(e_f_corrected, alignment):
     e_f_corrected_aligned = e_f_corrected + alignment
     return e_f_corrected_aligned
 
+def get_formation_energy_neutral(defect_energy, host_energy, add_or_remove, chemical_potential,
+                                 ):
+    """
+    Compute the formation energy without correction
+    """
+    # adding none
+    sign_of_mu = {'add': +1.0, 'remove': -1.0, 'none' : 0.0}
+    e_f_uncorrected = defect_energy - host_energy - sign_of_mu[add_or_remove]*chemical_potential #+ (
+        #charge * (valence_band_maximum + fermi_energy))
+    #e_f_uncorrected = defect_energy - host_energy #- sign_of_mu[add_or_remove]
+    #    charge * (valence_band_maximum + fermi_energy))
+
+    return e_f_uncorrected
+
 
