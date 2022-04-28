@@ -31,6 +31,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import shift_prepare
+from toolbox.siesta.defects.Corrections.Gaussian.utils_gaussian_rho import get_rotate_grid_sisl
 
 class DefectsFormationEnergyBase:
     """
@@ -65,6 +66,7 @@ class DefectsFormationEnergyBase:
                  E_iso_type=None,
                  avg_plane = None,
                  neutral_defect_path="./",
+                 potential_type = "VH",
                  ):
 
         self.defect_site = defect_site 
@@ -98,7 +100,7 @@ class DefectsFormationEnergyBase:
         self.charge_dw_tol = charge_dw_tol
         self.E_iso_type = E_iso_type
         self.avg_plane = avg_plane
-        
+        self.potential_type = potential_type
         #--------------------
         # Structure For Host
         #--------------------
@@ -149,10 +151,10 @@ class DefectsFormationEnergyBase:
         print(f"DEBUG: System Label for charge defect {self.defect_charge_sytemlabel}")
         self.add_or_remove = add_or_remove
 
-        #self.defect_structure_neutralize_fdf = sisl.get_sile (self.neutralize_defect_path / neutral_defect_fdf_name)
-        #self.defect_structure_neutralize = sisl.get_sile (self.neutralize_defect_path / neutral_defect_fdf_name).read_geometry(output=True)
         
         # VTs
+
+        print(f"POTENTIAL TYPE IS {self.potential_type}")
         print("DEBUG: initializing VTs for host")
         self.host_VT =  sisl.get_sile(self.initialize_potential ( self.host_path , self.host_systemlabel ))
         print("DEBUG: initializing VTs for neutralize defect")
@@ -162,20 +164,23 @@ class DefectsFormationEnergyBase:
 
         
         # If Rho's Needed
-        if self.correction_scheme == 'gaussian-rho' or self.correction_scheme == 'rho':
-            print("DEBUG: initializing Rhos ...")
-            self.rho_host = sisl.get_sile(self.initialize_rho( self.host_path, self.host_systemlabel))
-            self.rho_defect_q0 = sisl.get_sile(self.initialize_rho ( self.neutralize_defect_path , self.defect_neutralize_systemlabel ))
-            self.rho_defect_q = sisl.get_sile( self.initialize_rho (self.charge_defect_path , self.defect_charge_sytemlabel))
+        #if self.correction_scheme == 'gaussian-rho' or self.correction_scheme == 'rho':
+        print("DEBUG: initializing Rhos ...")
+        self.rho_host = sisl.get_sile(self.initialize_rho( self.host_path, self.host_systemlabel))
+        self.rho_defect_q0 = sisl.get_sile(self.initialize_rho ( self.neutralize_defect_path , self.defect_neutralize_systemlabel ))
+        self.rho_defect_q = sisl.get_sile( self.initialize_rho (self.charge_defect_path , self.defect_charge_sytemlabel))
 
     def initialize_potential(self,path,label):
         """
         """
-        #lVT = label+'.VT'
-        #lnc = label+'.nc'
-        #lnc = 'TotalPotential.grid.nc'
-        lVT = label+'.VH'
-        lnc = 'ElectrostaticPotential.grid.nc'
+        if self.potential_type == "VT":
+
+            lVT = label+'.VT'
+            lnc = label+'.nc'
+            lnc = 'TotalPotential.grid.nc'
+        if self.potential_type == "VH":
+            lVT = label+'.VH'
+            lnc = 'ElectrostaticPotential.grid.nc'
  
         if (path / lVT).exists():
             VT = path / lVT
@@ -256,7 +261,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  model_iterations_required = 3 ,
                  sigma = 0.5,
                  gamma = None,
-                 eta = None,
+                 eta = 1.0,
                  host_fdf_name ='input.fdf',
                  neutral_defect_fdf_name = 'input.fdf',
                  neutralize_defect_fdf_name = 'input.fdf',
@@ -272,6 +277,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  E_iso_type = "original",
                  avg_plane = "xy",
                  neutral_defect_path="./",
+                 potential_type = "VH",
                  ):
     
 
@@ -298,12 +304,13 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                  host_output_name  = host_output_name,
                  neutral_defect_output_name = neutral_defect_output_name,
                  neutralize_defect_output_name = neutralize_defect_output_name,
-                 charge_defect_output_name = neutral_defect_output_name,
+                 charge_defect_output_name = charge_defect_output_name,
                  cutoff = cutoff,
                  potential_align_scheme = potential_align_scheme,
                  charge_dw_tol = charge_dw_tol,
                  E_iso_type = E_iso_type,
-                 avg_plane = avg_plane
+                 avg_plane = avg_plane,
+                 potential_type = potential_type
                  )
                   
         self.fit_params = fit_params
@@ -341,7 +348,10 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
                     E_iso_type = self.E_iso_type,
-                    avg_plane = self.avg_plane
+                    avg_plane = self.avg_plane,
+                    rho_host= self.rho_host,
+                    rho_defect_q0 = self. rho_defect_q0,
+                    rho_defect_q= self.rho_defect_q ,
                     )
 
             self.Input_Gaussian.run()
@@ -394,7 +404,10 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
                     E_iso_type = self.E_iso_type,
-                    avg_plane = self.avg_plane
+                    avg_plane = self.avg_plane,
+                    rho_host= self.rho_host,
+                    rho_defect_q0 = self. rho_defect_q0,
+                    rho_defect_q= self.rho_defect_q ,                    
                     )
 
             self.Input_Gaussian.run()
@@ -449,7 +462,10 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                     potential_align_scheme = self.potential_align_scheme,
                     charge_dw_tol = self.charge_dw_tol,
                     E_iso_type = self.E_iso_type,
-                    avg_plane = self.avg_plane
+                    avg_plane = self.avg_plane,
+                    rho_host= self.rho_host,
+                    rho_defect_q0 = self. rho_defect_q0, 
+                    rho_defect_q= self.rho_defect_q ,
                     )
 
             self.Input_Gaussian.run()
@@ -600,7 +616,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                                                         output_name = self.neutral_defect_output_name) 
 
         self.defect_q0_Energy = get_output_energy_manual(path_dir = self.neutralize_defect_path,
-                                                         output_name = self.neutral_defect_output_name) 
+                                                         output_name = self.neutralize_defect_output_name) 
         self.defect_q_Energy = get_output_energy_manual( path_dir = self.charge_defect_path,
                                                          output_name = self.charge_defect_output_name)
 
@@ -612,7 +628,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
                                                               output_name = self.neutral_defect_output_name)
         # For Neutralize Case
         self.defect_q0_NE = get_output_total_electrons_manual(path_dir = self.neutralize_defect_path,
-                                                              output_name = self.neutral_defect_output_name)
+                                                              output_name = self.neutralize_defect_output_name)
         # For Charge Case
         self.defect_q_NE = get_output_total_electrons_manual(path_dir = self.charge_defect_path,
                                                               output_name = self.charge_defect_output_name)
@@ -773,19 +789,32 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         self.total_alignment = value
         print (f"Total Alignment Energy is            = {self.total_alignment}")
     
-    def calculate_total_correction(self):
+    def calculate_total_correction(self,model=None):
         """
 
         """
-        if self.potential_align_scheme == "Classic" and self.correction_scheme == "rho":
-            print("DEBUG:Classic,rho")
-            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] - (self.align_h_q_model * self.defect_charge)
-        if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model-tail":
-            print("DEBUG:Classic,gaussian-model-tail")
-            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
-        if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model":
-            print("DEBUG:Classic,gaussian-model")
-            self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+        if model is not None:
+            if model:
+                print("Adding the Alignment (for models)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+            else:
+                print("Subtract the Alignment (for rho)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] - (self.align_h_q_model * self.defect_charge)
+
+        else:
+            if self.potential_align_scheme == "Classic" and self.correction_scheme == "rho":
+                print("DEBUG:Classic,rho (subtarct)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] - (self.align_h_q_model * self.defect_charge)
+            if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model-tail":
+                print("DEBUG:Classic,gaussian-model-tail (add)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+            if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model":
+                print("DEBUG:Classic,gaussian-model (add)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+            if self.potential_align_scheme == "Classic" and self.correction_scheme == "gaussian-model-general":
+                print("DEBUG:Classic,gaussian-model-general (add)")
+                self.total_correction  = self.Input_Gaussian.model_correction_energies[1] + (self.align_h_q_model * self.defect_charge)
+
 
 
         print ("Total Correction Energy (includeing Alignment) is {}".format(self.total_correction))
@@ -939,15 +968,18 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             qq0model=False,
             avg_plane=None,
             title=r"$Title $",
-            save=False,
+            save_plot=False,
             dpi_size=800,
-            file_name="potential",
+            file_name=None,#"potential",
+            rotate_angle=None,
+            rotate_axes_plane='xy',
+            save_grid = False,
+            defect_site_location=False,
             ):
         """
 
             title=r"$2\times2\times2\ unrelax\ V_O^{\bullet\bullet} $"
         """
-        file_name = f"{file_name}-{self.defect_charge}"
         if avg_plane is None:
             print("Using user avg plane...")
             avg_plane = self.avg_plane
@@ -957,33 +989,96 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             plane = (0,2) 
         if avg_plane =='yz':
             plane = (1,2) 
+        
+        if file_name is None:
+            if self.defect_charge <0:
+                q="e"
+            if self.defect_charge >0:
+                q="p"
+            if rotate_angle is not None:
+                file_name = f"{self.correction_scheme}-{q}{self.defect_charge}-{rotate_angle}-{rotate_axes_plane}"
+            else:
+                file_name = f"{self.correction_scheme}-{q}{self.defect_charge}"
+ 
+
 
         print(f"Averaging Plane is {avg_plane}")
-        V_hq= (self.Input_Gaussian.v_host_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH
-        V_qq0= (self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH *4.0
-        V_q0h= self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_host_array
-        V_qq0_q0h = V_qq0+V_q0h
+        self._V_hq= (self.Input_Gaussian.v_host_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH
+        self._V_hq.set_geometry(self.defect_structure_charge)
+        self._V_qq0= (self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_defect_q_array)*2 # 2 bcz of VH *4.0
+        self._V_q0h= self.Input_Gaussian.v_defect_q0_array - self.Input_Gaussian.v_host_array
+        self._V_qq0_q0h = self._V_qq0+self._V_q0h
         V_model_fix = get_interpolation_sisl_from_array(input_array=self.Input_Gaussian.v_model[1],
-                target_shape=V_hq.shape)
-        V_model = sisl.Grid(shape=V_model_fix.shape,
+                target_shape=self._V_hq.shape)
+        self._V_model = sisl.Grid(shape=V_model_fix.shape,
                 geometry=self.Input_Gaussian.host_structure)
-        V_model.grid = V_model_fix.real /unit_convert("Bohr","Ang")**3
+        self._V_model.grid = V_model_fix.real /unit_convert("Bohr","Ang")**3
+        
+        if save_grid:
+            self._V_hq.write(f"{file_name}-V_hq.XSF")
+
+        if rotate_angle is not None:
+            if rotate_axes_plane =='xy':
+                r_plane = (0,1) 
+            if rotate_axes_plane =='xz':
+                r_plane = (0,2) 
+            if rotate_axes_plane =='yz':
+                r_plane = (1,2) 
+
+            print(f"rotating grids with angle {rotate_angle} ")
+            print(f"rotating grids with axes {rotate_axes_plane} = {r_plane} ")
+            
+            self._V_hq = get_rotate_grid_sisl(grid=self._V_hq,
+                                            angle=rotate_angle,
+                                            axes = r_plane,
+                                            geometry = self.defect_structure_charge,
+                                            f_name="V_hq_rotate",
+                                            save=save_grid)
+            self._V_qq0 = get_rotate_grid_sisl(grid=self._V_qq0,
+                                            angle=rotate_angle,
+                                            axes = r_plane,
+                                            geometry = self.defect_structure_charge,
+                                            f_name="V_qq0_rotate",
+                                            save=save_grid)
+            self._V_q0h = get_rotate_grid_sisl(grid=self._V_q0h,
+                                            angle=rotate_angle,
+                                            axes = r_plane,
+                                            geometry = self.defect_structure_charge,
+                                            f_name="V_q0h_rotate",
+                                            save=save_grid)
+
+            self._V_qq0_q0h = get_rotate_grid_sisl(grid=self._V_qq0_q0h,
+                                            angle=rotate_angle,
+                                            axes = r_plane,
+                                            geometry = self.defect_structure_charge,
+                                            f_name="V_qq0_q0h_rotate",
+                                            save=save_grid)
+
+            self._V_model = get_rotate_grid_sisl(grid=self._V_model,
+                                            angle=rotate_angle,
+                                            axes = r_plane,
+                                            geometry = self.defect_structure_charge,
+                                            f_name="V_model_rotate",
+                                            save=save_grid)
+
+
+
         #===================================
         # Taking Planer AVG
         #===================================
-        V_hq_avg = np.average(V_hq.grid,plane)
-        V_q0h_avg = np.average(V_q0h.grid,plane)
-        V_qq0_avg = np.average(V_qq0.grid,plane)
-        V_model_avg = np.average(V_model.grid.real,plane)
+        self._V_hq_avg = np.average(self._V_hq.grid,plane)
+        self._V_q0h_avg = np.average(self._V_q0h.grid,plane)
+        self._V_qq0_avg = np.average(self._V_qq0.grid,plane)
+        self._V_model_avg = np.average(self._V_model.grid.real,plane)
    
-        print(f"Alignment {(V_hq_avg - V_model_avg )[int(V_hq_avg.shape[0]/2)]}")
+        print(f"Alignment {(self._V_hq_avg - self._V_model_avg )[int(self._V_hq_avg.shape[0]/2)]}")
 
         if avg_plane =='xy':
-            x = np.linspace(0,V_hq.dcell[2][2]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+            x = np.linspace(0,self._V_hq.dcell[2][2]*self._V_hq_avg.shape[0],self._V_hq_avg.shape[0])
         if avg_plane =='xz':
-            x = np.linspace(0,V_hq.dcell[1][1]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+            x = np.linspace(0,self._V_hq.dcell[1][1]*self._V_hq_avg.shape[0],self._V_hq_avg.shape[0])
         if avg_plane =='yz':
-            x = np.linspace(0,V_hq.dcell[0][0]*V_hq_avg.shape[0],V_hq_avg.shape[0])
+            x = np.linspace(0,self._V_hq.dcell[0][0]*self._V_hq_avg.shape[0],self._V_hq_avg.shape[0])
 
 
         #===================================
@@ -995,34 +1090,52 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         plt.title(title)
         #================================================
         if hq:
-            ax.plot(x,V_hq_avg,label=r"$V_{pristine,q}$")
+            ax.plot(x,self._V_hq_avg,label=r"$V_{pristine,q}$")
         if qq0:
-            ax.plot(x,V_qq0_avg,label=r"$V_{q,q0}$")
+            ax.plot(x,self._V_qq0_avg,label=r"$V_{q,q0}$")
         if model:
-            ax.plot(x,V_model_avg,label=r"$V_{\rho}^{model\ DFT}$")
+            ax.plot(x,self._V_model_avg,label=r"$V_{\rho}^{model\ DFT}$")
         if hq0:
-            ax.plot(x,V_q0h_avg,label=r"$V_{q0,pristine}$")
+            ax.plot(x,self._V_q0h_avg,label=r"$V_{q0,pristine}$")
         if hqmodel:
-            ax.plot(x,V_hq_avg-V_model_avg,label=r"$(V_{pristine,q}-V_{\rho}^{model\ DFT})$")
+            ax.plot(x,self._V_hq_avg - self._V_model_avg,label=r"$(V_{pristine,q}-V_{\rho}^{model\ DFT})$")
         if hqq0:
-            ax.plot(x,V_hq_avg-V_qq0_avg,label=r"$(V_{pristine,q}-V_{\rho}^{q,q0})$")
+            ax.plot(x,self._V_hq_avg-self._V_qq0_avg,label=r"$(V_{pristine,q}-V_{\rho}^{q,q0})$")
         #ax.plot(V_hqr_avg,label=r"$V_{pristine,q}^{relax}$")
         #ax.plot(V_model_s_avg,label=r"$V_{\rho}^{model\ DFT stats}$")
         #ax.plot(V_hqr_avg-V_model_avg,label=r"$(V_{pristine,q}^{relax}-V_{\rho}^{model\ DFT})$")
         #ax.plot(V_model_avg-V_qq0_avg,label=r"$(V_{model}-V_{\rho}^{q,q0})$")
         if qq0model:
-            ax.plot(x,V_qq0_avg-V_model_avg,label=r"$(V_{\rho}^{q,q0}-V_{model})$")
+            ax.plot(x,self._V_qq0_avg-self._V_model_avg,label=r"$(V_{\rho}^{q,q0}-V_{model})$")
         ax.axhline(linestyle="--",color="black")
         ax.set_ylabel(r"$Energy\ [eV]$")
         ax.set_xlabel(r"$Distance\ [\mathring{A}]$")
 
-        ax.annotate(f"Alignment : {np.round((V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)],decimals=4)} eV", 
-            #xy=(int(V_model_avg.shape[0]/2), (V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)]), 
-            #xytext=(int(V_model_avg.shape[0]/2), V_hq_avg.min()),
-            xy=(x[int(x.shape[0]/2)], (V_hq_avg-V_model_avg)[int(V_model_avg.shape[0]/2)]), 
-            xytext=(x[int(x.shape[0]/2)], V_hq_avg.min()),
- 
-            arrowprops=dict(arrowstyle="->"))
+
+        if defect_site_location and rotate_angle is None:
+            print("bla")
+            s=shift_prepare(self.defect_site,self._V_hq)
+            if avg_plane=="xy":
+                mid_point = self._V_hq.shape[2] - s[2]
+            if avg_plane=="xz":
+                mid_point = self._V_hq.shape[1] - s[1]
+            if avg_plane=="yz":
+                mid_point = self._V_hq.shape[0] - s[0]
+            self.align_h_q_model =  (self._V_hq_avg-self._V_model_avg)[mid_point]
+            print(f"DEBUG: Alignment : {self.align_h_q_model} eV")
+            ax.annotate(f"Alignment : {np.round((self.align_h_q_model),decimals=4)} eV",
+                    xy=(x[mid_point],self.align_h_q_model ),
+                    xytext=(x[mid_point], self._V_hq_avg.min()),
+                    arrowprops=dict(arrowstyle="->"))
+
+        else:
+            self.align_h_q_model = (self._V_hq_avg-self._V_model_avg)[int(self._V_model_avg.shape[0]/2)]
+
+            print(f"DEBUG: Alignment : {self.align_h_q_model} eV")
+            ax.annotate(f"Alignment : {np.round((self.align_h_q_model),decimals=4)} eV", 
+                    xy=(x[int(x.shape[0]/2)],self.align_h_q_model ), 
+                    xytext=(x[int(x.shape[0]/2)], self._V_hq_avg.min()),
+                    arrowprops=dict(arrowstyle="->"))
         # Shrink current axis by 20%
         box = ax.get_position()
         ax.set_position([box.x0, box.y0,box.width * 0.68, box.height])
@@ -1030,7 +1143,19 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         # Put a legend to the right of the current axis
 
         ax.legend(title=epsilon,loc='center left', bbox_to_anchor=(1, 0.5))
-        if save:
+        
+        # Defining Name 
+        if file_name is None:
+            if self.defect_charge <0:
+                q="e"
+            if self.defect_charge >0:
+                q="p"
+            if rotate_angle is not None:
+                file_name = f"V-avg-{self.correction_scheme}-{q}{self.defect_charge}-{avg_plane}-{rotate_angle}-{rotate_axes_plane}"
+            else:
+                file_name = f"V-avg-{self.correction_scheme}-{q}{self.defect_charge}-{avg_plane}"
+ 
+        if save_plot:
             plt.savefig(f'{file_name}.png', dpi=dpi_size, bbox_inches='tight' )
             plt.savefig(f'{file_name}.jpeg', dpi=dpi_size, bbox_inches='tight')
 
@@ -1061,7 +1186,18 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         rho_s.write(name_s)
 
     @staticmethod
-    def Plot_Phase_Diagram(PhaseData_name,label,title_name=r"$Phase\ Diagram$",file_name="phase_diagram",dpi_size=800,save=False,neutral_formation=None,neutral_label=r"$Neutral$",x_min=None,x_max=None,y_min=None,y_max=None ):
+    def Plot_Phase_Diagram(PhaseData_name,
+            label,
+            title_name=r"$Phase\ Diagram$",
+            file_name="phase_diagram",
+            dpi_size=300,
+            save=False,
+            neutral_formation=None,
+            neutral_label=r"$Neutral$",
+            x_min=None,
+            x_max=None,
+            y_min=None,
+            y_max=None ):
         """
         Static Method for Ploting Phase Diagram
         PhasData_name : Dictionay
@@ -1093,7 +1229,7 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
         if neutral_formation is not None :
             ax.axhline(neutral_formation,color='black',label=neutral_label)
         # Shrink current axis by 20%
-        ax.set_xlabel(xlabel=r'$\mu\ [eV]$')
+        ax.set_xlabel(xlabel=r'$\mu_e\ [eV]$')
         ax.set_ylabel(ylabel= r'$Formation\ Energy\ \ [eV]$')
 
         box = ax.get_position()
@@ -1111,3 +1247,142 @@ class DefectsFormationEnergy(DefectsFormationEnergyBase):
             plt.savefig(f'{file_name}.jpeg', dpi=dpi_size, bbox_inches='tight')
 
         plt.show()
+
+
+    def Plot_Charge(self,
+            plot_save = False,
+            plot_qmodel = False,
+            plot_q_q0 = True,
+            plot_host_q = False,
+            plot_host_q0 = False,
+            plot_eta = False,
+            **kwargs):
+        """
+        """
+        import matplotlib.pyplot as plt
+        epsilon = self.epsilon
+        eta = self.eta
+        dpi_size=600
+        name_graph="eta-charge"
+        avg_plane = "xy"
+        #title_name_graph = r" "
+        for k,v in kwargs.items():
+            if k == 'epsilon':
+                epsilon = v
+            if k == 'eta':
+                eta = v
+            if k == 'dpi_size':
+                dpi_size = v
+            if k == 'name_graph':
+                name_graph == v
+            if k == 'Charge':
+                Charge_q_q0 = v
+            if k == "avg_plane":
+                avg_plane = v
+
+
+        if avg_plane =="xy":
+            avg_p = (0,1)
+        if avg_plane =="xz":
+            avg_p = (0,2)
+        if avg_plane =="yz":
+            avg_p = (1,2)
+        print(f"avg_plane is : {avg_plane},{avg_p}")
+
+        if plot_eta:
+            charge_eta = (1-eta*(1/epsilon))*self.defect_charge
+            charge_epsilon = (1-1*(1/epsilon))*self.defect_charge
+            print(f" charge eta:{charge_eta}\n charge epsilon {charge_epsilon}")
+
+        if self.defect_charge >0 :
+            q = "p"
+            fname = f"{name_graph}-{q}-{self.defect_charge}"
+        if self.defect_charge < 0 :
+            q= "e"
+            fname = f"{name_graph}-{q}-{self.defect_charge}"
+        
+
+        if plot_q_q0:
+            c_avg = np.average(self.Input_Gaussian.rho_defect_q_q0_array.grid*self.Input_Gaussian.host_structure.volume,avg_p)
+            fig = plt.figure()
+            plt.title(r"$q-q_0$")
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$='+f'{self.defect_charge}{q}',linestyle="-",alpha=1)
+            if plot_eta:
+                ax.axhline(charge_eta,label=rf"$(1-\eta/\epsilon)q, \epsilon = {epsilon},\eta = {eta}$",linestyle="-.",color='red')
+                ax.axhline(charge_epsilon,label=rf"$(1-1/\epsilon)q, \epsilon = {epsilon}, \eta = 1 $",linestyle="--",color='green')
+            if plot_qmodel:
+                inter_q = get_interpolation_sisl_from_array(self.Input_Gaussian.model_charges[1],self.Input_Gaussian.rho_defect_q_q0_array.shape)
+                q_avg = np.average(inter_q*self.Input_Gaussian.host_structure.volume,avg_p)
+                #q_avg = np.average(self.Input_Gaussian.model_charges[1]*self.Input_Gaussian.host_structure.volume,avg_p)
+                #q_avg = np.average(self.Input_Gaussian.model_charges[1],avg_p)
+                ax.plot(q_avg,label = r"$\rho_{model}$",linestyle="-.",alpha=1)
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / Volume]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if plot_save:
+                print("Saving the plot")
+              
+                plt.savefig(f"{fname}-q-q0.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{fname}-q-q0.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+        if plot_host_q:
+            self.rho_host_q_array = self.Input_Gaussian.rho_host_array - self.Input_Gaussian.rho_defect_q_array
+            c_avg = np.average(self.rho_host_q_array.grid*self.Input_Gaussian.host_structure.volume,avg_p)
+            #c_avg = np.average(self.rho_defect_q_q0_array.grid*self.host_structure.volume,(0,1))
+            fig = plt.figure()
+            plt.title(r"$host-q$")
+            #plt.title(title_name_graph)
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$='+f'{self.defect_charge}{q}',linestyle="-",alpha=1)
+            if plot_eta:
+                ax.axhline(charge_eta,label=r"$(1-\eta/\epsilon)q$",linestyle="-.",color='red')
+                ax.axhline(charge_epsilon,label=r"$(1-1/\epsilon)q$",linestyle="--",color='green')
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / V]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if plot_save:
+                print("Saving the plot")
+                plt.savefig(f"{fname}-h-q.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{fname}-h-q.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+        if plot_host_q0:
+            self.rho_host_q0_array = self.Input_Gaussian.rho_host_array - self.Input_Gaussian.rho_defect_q0_array
+            c_avg = np.average(self.rho_host_q0_array.grid*self.host_structure.volume,avg_p)
+            #c_avg = np.average(self.rho_defect_q_q0_array.grid*self.host_structure.volume,(0,1))
+            fig = plt.figure()
+            plt.title(r"$host-q_0$")
+            #plt.title(title_name_graph)
+            ax = plt.subplot(111)
+            ax.plot(c_avg,label=r'$\rho_{DFT}$='+f'{self.defect_charge}{q}',linestyle="-",alpha=1)
+            if plot_eta:
+                ax.axhline(charge_eta,label=r"$(1-\eta/\epsilon)q$",linestyle="-.",color='red')
+                ax.axhline(charge_epsilon,label=r"$(1-1/\epsilon)q$",linestyle="--",color='green')
+            ax.set_xlabel(r"$Postition\ z\ [grid]$")
+            ax.set_ylabel(r"$Charge\ Density\ [e\ / V]$")
+            ax.legend()
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            #ax.set(ylim=(-0.25,0.25))
+            # Put a legend to the right of the current axis
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            if plot_save:
+                print("Saving the plot")
+                plt.savefig(f"{fname}-h-q0.jpeg", dpi=dpi_size, bbox_inches='tight')
+                plt.savefig(f"{fname}-h-q0.png", dpi=dpi_size, bbox_inches='tight')
+
+            plt.show()
+
+                          

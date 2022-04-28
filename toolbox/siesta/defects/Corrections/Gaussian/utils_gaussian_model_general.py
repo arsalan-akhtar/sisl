@@ -191,14 +191,21 @@ def get_gaussian_3d(grid, position, sigma,charge,gamma,eta):
     z = grid[2] - position[2]
     
     beta = sigma
-    N_gamma = (8*np.pi*gamma**3)**-1
-    N_beta = (np.pi*beta**2)**(-3/2)
+    N_gamma = (8.0*np.pi*(gamma**3.0))**(-1.0)
+    N_beta = (np.pi*(beta**2.0))**(-3.0/2.0)
 
     #w= 0.3
     #eta = 1.0 - w
     w = 1.0 - eta
+    print(f"DEBUG: w is {w}")
+    print(f"DEBUG: eta is {eta}")
+    print(f"DEBUG: gamma is {gamma}")
 
-    gaussian = charge * w * N_gamma *(np.exp(-(x+y+z)/gamma)) + charge*(1-w)*N_beta*(np.exp(-(x**2 + y**2 + z**2) / (beta**2))) 
+    #gaussian = charge * w * N_gamma *(np.exp(-(x+y+z)/gamma)) + charge*(eta)*N_beta*(np.exp(-1.0*(x**2 + y**2 + z**2) / (beta**2))) 
+    
+    gaussian = charge * w * N_gamma *(np.exp(-(x+y+z)**2/gamma)) + charge*(eta)*N_beta*(1.0*np.exp(-1.0*(x**2 + y**2 + z**2) / (beta**2))) 
+    #gaussian = w * N_gamma *(np.exp(-(x+y+z)**2/gamma)) + (eta)*N_beta*(np.exp(-1.0*(x**2 + y**2 + z**2) / (beta**2))) 
+    #gaussian = w*N_gamma( (np.exp(-(x+y+z)**1/gamma))/2.0 - (np.exp(-(x+y+z)**1/gamma))/2.0 ) + (eta)*N_beta*(np.exp(-1.0*(x**2 + y**2 + z**2) / (beta**2))) 
 
     return gaussian
 

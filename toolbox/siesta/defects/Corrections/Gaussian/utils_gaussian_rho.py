@@ -36,7 +36,89 @@ def get_rho_model(charge_grid,geometry,scale_f,sub_grid_shift,write_out=False):
         grid_SC.write(f"model_charge-{scale_f}{scale_f}{scale_f}.XSF")
     return grid_SC
 
+
 def shift_prepare(defect_site,grid):
+    """
+    """
+    if defect_site[0]!=0.0:
+        n_x = int(defect_site[0]/grid.dcell[0][0])+1
+    else:
+        n_x = 0
+    if defect_site[1]!=0.0:
+        n_y = int(defect_site[1]/grid.dcell[1][1])+1
+    else:
+        n_y = 0
+    if defect_site[2]!=0.0:
+        n_z = int(defect_site[2]/grid.dcell[2][2])+1
+    else:
+        n_z = 0
+
+    
+    print (f" Mesh grid {grid.shape}")
+    print (f" Defect site position on mesh {n_x,n_y,n_z}")
+    if n_x >= grid.shape[0]/2:
+        d_position_x = n_x*grid.dcell[0][0]-grid.dcell[0][0]
+    else:
+        d_position_x = n_x*grid.dcell[0][0]
+        
+    if n_y >= grid.shape[1]/2:
+        d_position_y = n_y*grid.dcell[1][1]-grid.dcell[1][1]
+    else:
+        d_position_y = n_y*grid.dcell[1][1]
+
+    if n_z >= grid.shape[2]/2:
+        d_position_z = n_z*grid.dcell[2][2]-grid.dcell[2][2]
+    else:
+        d_position_z = n_z*grid.dcell[2][2]
+        
+    d_position = (d_position_x,
+                  d_position_y,
+                  d_position_z)
+    print (f" Defect site position on crystal {d_position}")
+    #print
+    #===========
+    if n_x<0:
+        print("y is negative")
+        #n_y_new = n_y
+        #n_y_new = grid.shape[1]+int(defect_site[1]/grid.dcell[1][1])#-1
+        print(n_x)
+        n_x=abs(n_x)
+
+    if n_y<0:
+        print("y is negative")
+        #n_y_new = n_y
+        #n_y_new = grid.shape[1]+int(defect_site[1]/grid.dcell[1][1])#-1
+        print(n_y)
+        n_y=abs(n_y)
+        
+    if n_z<0:
+        print("z is negative")
+        #n_y_new = n_y
+        #n_y_new = grid.shape[1]+int(defect_site[1]/grid.dcell[1][1])#-1
+        print(n_z)
+        n_z=abs(n_z)
+        
+    if n_x >= grid.shape[0]/2:
+        s_x = n_x - int(grid.shape[0]/2) #0 #int(grid.shape[0]/2)+int((n_x-int(grid.shape[0]/2)))
+    else:
+        s_x = int((int(grid.shape[0]/2)-n_x))
+    if n_y >= grid.shape[1]/2:
+        s_y = n_y - int(grid.shape[1]/2) #0 #int(grid.shape[1]/2)+int((n_y-int(grid.shape[1]/2)))
+    else:
+        s_y = int((int(grid.shape[1]/2)-n_y))
+    if n_z >= grid.shape[2]/2:
+        s_z = n_z -int(grid.shape[2]/2) #0 #int(grid.shape[2]/2)-int((n_z-int(grid.shape[2]/2)))
+    else:
+        s_z = int((int(grid.shape[2]/2)-n_z))
+
+    shift=(s_x,s_y,s_z)
+    print(f"the Shift is {shift}")
+    print(f"the Shift position {s_x*grid.dcell[0][0],s_y*grid.dcell[1][1],s_z*grid.dcell[2][2]}")
+    return shift
+
+
+
+def shift_prepare_buggy_todelete(defect_site,grid):
     """
     """
     if defect_site[0]!=0.0:
@@ -118,3 +200,19 @@ def cut_rho(charge_density,tolerance,struct):
     rho = sisl.Grid(charge_density_cutted.shape , geometry = struct)
     rho.grid = charge_density_cutted
     return rho
+
+
+def get_rotate_grid_sisl(grid,angle,axes,geometry,reshape=False,prefilter=True,mode="grid-wrap",f_name="V_rotate",save=False):
+    """
+    """
+    from scipy import ndimage, misc
+    import sisl
+    #img = misc.ascent()
+    rot_arr=ndimage.rotate(grid.grid, angle=angle,axes=axes, reshape=reshape,mode=mode,prefilter=prefilter)
+    grid_rotate = sisl.Grid(rot_arr.shape)
+    grid_rotate.grid =rot_arr
+    grid_rotate.set_geometry(geometry)
+    filename = f"{f_name}.XSF"
+    if save:
+        grid_rotate.write(filename)
+    return grid_rotate

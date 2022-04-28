@@ -37,7 +37,7 @@ def get_charge_model_sigma(limits,
     grid = np.meshgrid(i, j, k)
 
     # Get the gaussian at the defect position
-    g = get_gaussian_3d(grid, defect_position, sigma)
+    #g = get_gaussian_3d(grid, defect_position, sigma) #Commented to check
     # Get the offsets
     offsets = np.zeros(3)
     for axis in range(3):
@@ -67,6 +67,7 @@ def get_charge_model_sigma(limits,
     # Compensating jellium background
     print("DEBUG: Integrated charge density (scaled_g) = {}".format(
         get_integral(g, dimensions, limits)))
+        #get_integral(g, dimensions, limits)))
         #get_integral_new(g, cell_matrix)))
 
     #scaled_g = scaled_g - np.sum(scaled_g)/np.prod(scaled_g.shape)
@@ -188,9 +189,17 @@ def get_gaussian_3d(grid, position, sigma):
     Calculate 3D Gaussian on grid
     NOTE: Minus sign at front give negative values of charge density throughout the cell
     """
+    # Worked
     x = grid[0] - position[0]
     y = grid[1] - position[1]
     z = grid[2] - position[2]
+    # Working
+    #gaussian = (np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2))) * (1.0/ (
+    #    np.sqrt(2.0 * np.pi) * sigma))
+
+    N_sigma = (np.pi*(sigma)**2.0)**(-3.0/2.0)
+    gaussian = (-1.0*np.exp(-(x**2 + y**2 + z**2) / ( sigma**2))) * N_sigma
+   
     #x = grid[1] - position[1]
     #y = grid[0] - position[0]
     #z = grid[2] - position[2]
@@ -200,9 +209,7 @@ def get_gaussian_3d(grid, position, sigma):
     
     #gaussian = -np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2)) / (
     #    np.sqrt(2.0 * np.pi) * sigma)
-
-    gaussian = (np.exp(-(x**2 + y**2 + z**2) / (2 * sigma**2))) * (1.0/ (
-        np.sqrt(2.0 * np.pi) * sigma))
+    #gaussian = (x**2 + y**2 + z**2) - sigma**2
 
 
     return gaussian
