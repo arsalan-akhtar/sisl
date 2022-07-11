@@ -2,11 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from functools import wraps
-from os.path import splitext, isfile, dirname, join, abspath, basename
+from os.path import splitext, basename
 import gzip
 from pathlib import Path
-
-import numpy as np
 
 from sisl._internal import set_module
 from sisl.messages import SislWarning, SislInfo
@@ -87,7 +85,7 @@ class _sile_rule:
                 try:
                     i = children.index(obj)
                     children.pop(i)
-                except:
+                except Exception:
                     pass
             for child in list(children): # ensure we have a copy for infinite loops
                 for c in child.__bases__:
@@ -278,6 +276,10 @@ def get_sile(file, *args, **kwargs):
 
     Internally this is roughly equivalent to ``get_sile_class(...)()``.
 
+    When the file suffix is not recognized and you know which file-type it is
+    it is recommended to get the file class from the known suffixes and use that
+    class to construct the file object, see examples.
+
     Parameters
     ----------
     file : str or pathlib.Path
@@ -291,6 +293,21 @@ def get_sile(file, *args, **kwargs):
        you may query the exact base-class that should be chosen.
        If there are several files with similar file-endings this
        function returns a random one.
+
+    Examples
+    --------
+    A file named ``water.dat`` contains the xyz-coordinates as the `xyzSile`.
+    One can forcefully get the sile by:
+
+    >>> obj = get_sile("water.dat{xyzSile}")
+
+    Alternatively one can query the xyz file and use that class reference
+    in future instantiations. This ensures a future proof method without
+    explicitly typing the Sile object.
+
+    >>> cls = get_sile_class("anyfile.xyz")
+    >>> obj = cls("water.dat")
+    >>> another_xyz = cls("water2.dat")
     """
     cls = kwargs.pop('cls', None)
     sile = get_sile_class(file, *args, cls=cls, **kwargs)
@@ -373,11 +390,7 @@ class BaseSile:
         """ File of the current `Sile` """
         if filename is None:
             filename = Path(self._file).name
-        return Path(self._directory) / filename_base / filename
-
-    def exist(self):
-        """ Query whether the file exists """
-        return isfile(self.file)
+        return self._directory / filename_base / filename
 
     def read(self, *args, **kwargs):
         """ Generic read method which should be overloaded in child-classes
@@ -454,7 +467,7 @@ class BaseSile:
 
     def _base_file(self, f):
         """ Make `f` refer to the file with the appropriate base directory """
-        return join(self._directory, f)
+        return self._directory / f
 
     def __getattr__(self, name):
         """ Override to check the handle """
@@ -476,7 +489,7 @@ class BaseSile:
         p : ArgumentParser
            the argument parser to add the arguments to.
         """
-        raise NotImplementedError("The ArgumentParser of '"+self.__class__.__name__+"' has not been implemented yet.")
+        raise NotImplementedError(f"The ArgumentParser of '{self.__class__.__name__}' has not been implemented yet.")
 
     def ArgumentParser_out(self, p=None, *args, **kwargs):
         """ Appends additional arguments based on the output of the file
@@ -490,7 +503,14 @@ class BaseSile:
 
     def __str__(self):
         """ Return a representation of the `Sile` """
-        return "{0}({1!s}, base={2!s})".format(self.__class__.__name__, self.base_file, self._directory)
+        # Check if the directory is relative to the current path
+        # If so, only print the relative path, otherwise print the full path
+        d = self._directory
+        try:
+            # bypass d.is_relative_to, added in 3.9
+            d = d.relative_to(Path('.').resolve())
+        except Exception: pass
+        return f"{self.__class__.__name__}({self.base_file!s}, base={d!s})"
 
 
 def sile_fh_open(from_closed=False):
@@ -548,7 +568,12 @@ class Sile(BaseSile):
 
     def _open(self):
         if self.file.suffix == ".gz":
-            self.fh = gzip.open(str(self.file))
+            if self._mode == 'r':
+                # assume the file is a text file and open in text-mode
+                self.fh = gzip.open(str(self.file), mode='rt')
+            else:
+                # assume this is opening in binary or write mode
+                self.fh = gzip.open(str(self.file), mode=self._mode)
         else:
             self.fh = self.file.open(self._mode)
         self._line = 0
@@ -704,7 +729,7 @@ class SileCDF(BaseSile):
         self._lvl = lvl
         # Initialize the _data dictionary for access == 1
         self._data = dict()
-        if self.exist():
+        if self.file.is_file():
             self._access = access
         else:
             # If it has not been created we should not try
@@ -801,7 +826,7 @@ class SileCDF(BaseSile):
             grp = n
             for group in groups:
                 if len(group) > 0:
-                    grp = _crt_grp(grp, group)
+                    grp = SileCDF._crt_grp(grp, group)
             return grp
 
         if name in n.groups:
@@ -811,8 +836,8 @@ class SileCDF(BaseSile):
     @staticmethod
     def _crt_dim(n, name, l):
         if name in n.dimensions:
-            return
-        n.createDimension(name, l)
+            return n.dimensions[name]
+        return n.createDimension(name, l)
 
     @staticmethod
     def _crt_var(n, name, *args, **kwargs):
@@ -982,7 +1007,7 @@ class SileError(IOError):
 
     def __str__(self):
         if self.obj:
-            return self.value + ' in ' + str(self.obj)
+            return f"{self.value!s} in {self.obj!s}"
         else:
             return self.value
 

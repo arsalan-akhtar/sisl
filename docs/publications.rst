@@ -9,6 +9,58 @@ publications below.
 Please help maintaining the list complete via a `pull request <pr_>`_ or
 by writing an email to `nickpapior AT gmail.com <mailto:nickpapior@gmail.com>`_.
 
+#. EA. Haidar, S.A. Tawfik, C. Stampfl,
+   *Twist-Dependent Electron Charge Transfer and Transport in Phosphorene–Graphene Heterobilayers*,
+   Journal of Physical Chemistry C, **46**, `25886 (2021) <https://doi.org/10.1021/acs.jpcc.1c08282>`_
+
+#. M. Tenorio, *et al.*,
+   *Atomically Sharp Lateral Superlattice Heterojunctions Built-in Nitrogen-doped Nanoporous Graphene*,
+   Advanced Materials, `(2022) <https://doi.org/10.1002/adma.202110099>`_
+
+#. G. Yu, *et al.*,
+   *Interlayer hybridization in graphene quasicrystal and other bilayer graphene systems*,
+   Physical Review B, **105**, `125403 (2022) <https://doi.org/10.1103/PhysRevB.105.125403>`_
+
+#. T. Wang, *et al.*,
+   *Magnetic interactions between radical pairs in chiral graphene nanoribbons*,
+   Nano Lett. **22**, `164-171 (2022) <https://doi.org/10.1021/acs.nanolett.1c03578>`_
+
+#. J. Hieulle, *et al.*,
+   *On-surface synthesis and collective spin excitations of a triangulene-based nanostar*
+   Angew. Chem. Int. Ed. **60**, `25224-25229 (2021) <https://doi.org/10.1002/anie.202108301>`_
+
+#. A. Pezo, *et al.*,
+   *Manipulation of spin transport in graphene/transition metal dichalcogenide heterobilayers upon twisting*,
+   2D Materials, **9**, `015008 (2021) <https://doi.org/10.1088/2053-1583/ac3378>`_
+
+#. J. Tong, *et al.*,
+   *Breaking the symmetry of spin-sublattices in antiferromagnet by interfacial tailoring in the L10-MnPt/NaCl/Fe junction*,
+   Applied Physics Letter, **119**, `172401 (2021) <https://doi.org/10.1063/5.0064931>`_
+
+#. I. Alcon, N. Papior, G. Calogero, F. Vines, P. Gamallo, M. Brandbyge,
+   *Acetylene-Mediated Electron Transport in Nanostructured Graphene and Hexagonal Boron Nitride*,
+   J. Phys. Chem. Lett. **12**, `11220 (2021) <https://doi.org/10.1021/acs.jpclett.1c03166>`_
+
+#. N. Wittemeier, M.J. Verstraete, P. Ordejón, Z. Zanolli,
+   *Interference effects in one-dimensional moiré crystals*,
+   Carbon **186**, `416 (2021) <https://doi.org/10.1016/j.carbon.2021.10.028>`_
+
+#. M. Mohr, A. Weismann, D. Li, M. Brandbyge, R. Berndt,
+   *Current shot noise in atomic contacts: Fe and FeH2 between Au electrodes*
+   Physical Review B **104**, `115431 (2021) <https://doi.org/10.1103/PhysRevB.104.115431>`_
+
+#. J. Zhang, E.P. Fahrenthold,
+   *Spin current distribution in antiferromagnetic zigzag graphene nanoribbons under transverse electric fields*,
+   Scientific Reports **1**, `17088 (2021) <https://doi.org/10.1038/s41598-021-96636-6>`_
+
+#. I. Alcon, G. Calogero, N. Papior, M. Brandbyge,
+   *Electrochemical Control of Charge Current Flow in Nanoporous Graphene*,
+   Advanced Functional Materials, `2104031 (2021) <https://doi.org/10.1002/adfm.202104031>`_
+
+#. J. Li, *et al.*,
+   *Topological phase transition in chiral graphene nanoribbons: from edge bands to end states*,
+   Nature Communications **12**, `5538 (2021) <https://doi.org/10.1038/s41467-021-25688-z>`_
+
 #. D. Li, J.L. Bertelsen, N. Papior, A. Smogunov, M. Brandbyge,
    *Surface states and related quantum interference in ab initio electron transport*,
    Physical Review Research **3**, `033017 (2021) <https://doi.org/10.1103/PhysRevResearch.3.033017>`_
@@ -27,7 +79,7 @@ by writing an email to `nickpapior AT gmail.com <mailto:nickpapior@gmail.com>`_.
 
 #. D. Perera and J. Rohrer,
    *Semi-analytical approach to transport gaps in polycrystalline graphene*
-   Nanoscale, `(2021) <https://doi.org/10.1039/d1nr00186h>`_
+   Nanoscale **13**, `7709 (2021) <https://doi.org/10.1039/d1nr00186h>`_
 
 #. B. Focassio, G.R. Schleder, M. Costa, A. Fazzio, C. Lewenkopf,
    *Structural and electronic properties of realistic two-dimensional amorphous topological insulators*,
@@ -37,7 +89,7 @@ by writing an email to `nickpapior AT gmail.com <mailto:nickpapior@gmail.com>`_.
    *High and reversible spin polarization in a collinear antiferromagnet*,
    Applied Physics Review, **7**, `031405 (2020) <https://aip.scitation.org/doi/10.1063/5.0004564>`_
 
-#. A. Garcia, *et. al.*,
+#. A. Garcia, *et al.*,
    *Siesta: Recent developments and applications*,
    J. Chem. Phys. **152**, `204108 (2020) <https://doi.org/10.1063/5.0005077>`_
 

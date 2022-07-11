@@ -59,9 +59,11 @@ class PhysicalConstant(float):
     __slots__ = ['_unit']
 
     def __new__(cls, value, unit):
-        c = float.__new__(cls, value)
-        c._unit = unit
-        return c
+        constant = float.__new__(cls, value)
+        return constant
+
+    def __init__(self, value, unit):
+        self._unit = unit
 
     @property
     def unit(self):
@@ -76,6 +78,11 @@ class PhysicalConstant(float):
         if unit is None:
             return self
         return PhysicalConstant(self * units(self.unit, unit), unit)
+
+    def __eq__(self, other):
+        if isinstance(other, PhysicalConstant):
+            super().__eq__(self, other * units(other.unit, self.unit))
+        return super().__eq__(self, other)
 
 
 __all__ += ['q', 'c', 'h', 'hbar', 'm_e', 'm_p', 'G', 'G0']

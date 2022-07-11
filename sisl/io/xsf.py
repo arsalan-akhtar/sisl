@@ -9,6 +9,7 @@ import numpy as np
 from .sile import *
 
 from sisl._internal import set_module
+from sisl import PeriodicTable
 from sisl import Geometry, AtomUnknown, SuperCell
 from sisl.utils import str_spec
 import sisl._array as _a
@@ -136,6 +137,8 @@ class xsfSile(Sile):
         line = " "
         all_loaded = False
 
+        pt = PeriodicTable()
+
         while line != '' and not all_loaded:
             line = self.readline()
 
@@ -205,7 +208,7 @@ class xsfSile(Sile):
                 for _ in range(int(line[0])):
                     line = self.readline().split()
                     if not xyz_set[istep]:
-                        iatom.append(int(line[0]))
+                        iatom.append(pt.Z(line[0]))
                         ixyz.append([float(x) for x in line[1:4]])
                     if ret_data and len(line) > 4:
                         idata.append([float(x) for x in line[4:]])
@@ -234,7 +237,7 @@ class xsfSile(Sile):
         geoms = []
         for istep in range(len(steps)):
             if len(atom) == 0:
-                geoms.append(si.Geometry(xyz[istep], sc=SuperCell(cell[istep])))
+                geoms.append(Geometry(xyz[istep], sc=SuperCell(cell[istep])))
             elif len(atom[0]) == 1 and atom[0][0] == -999:
                 # should we perhaps do AtomUnknown?
                 geoms.append(None)

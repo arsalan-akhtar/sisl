@@ -29,10 +29,9 @@ from .plotutils import (
     running_in_notebook, check_widgets, call_method_if_present
 )
 from .input_fields import (
-    TextInput, SileInput, SwitchInput,
-    ColorPicker, DropdownInput, IntegerInput,
-    FloatInput, RangeSlider, QueriesInput,
-    ProgramaticInput, PlotableInput
+    TextInput, SileInput, BoolInput,
+    OptionsInput, IntegerInput,
+    ListInput, ProgramaticInput
 )
 from ._shortcuts import ShortCutable
 
@@ -69,15 +68,11 @@ class PlotMeta(ConfigurableMeta):
                 filename = args[0]
                 sile = sisl.get_sile(filename)
 
-                if sile.__class__ == sisl.io.siesta.fdfSileSiesta:
-                    kwargs["root_fdf"] = filename
-                    plot = cls(**kwargs)
+                if hasattr(sile, "plot"):
+                    plot = sile.plot(**{**kwargs, "method": plot_method})
                 else:
-                    if hasattr(sile, "plot"):
-                        plot = sile.plot(**{**kwargs, "method": plot_method})
-                    else:
-                        raise NotImplementedError(
-                            f'There is no plot implementation for {sile.__class__} yet.')
+                    raise NotImplementedError(
+                        f'There is no plot implementation for {sile.__class__} yet.')
             elif isinstance(args[0], Plot):
                 plot = args[0].update_settings(**kwargs)
             else:
@@ -128,6 +123,8 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -160,7 +157,6 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
             "icon": "import_export",
             "description": "In such a busy world, one may forget how the files are structured in their computer. Please take a moment to <b>make sure your data is being read exactly in the way you expect<b>."
         },
-
     )
 
     _parameters = (
@@ -168,30 +164,37 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
         SileInput(
             key = "root_fdf", name = "Path to fdf file",
             dtype=sisl.io.siesta.fdfSileSiesta,
-            group = "dataread",
-            help = "Path to the fdf file that is the 'parent' of the results.",
-            params = {
+            group="dataread",
+            help="Path to the fdf file that is the 'parent' of the results.",
+            params={
                 "placeholder": "Write the path here..."
             }
         ),
 
         TextInput(
-            key = "results_path", name = "Path to your results",
-            group = "dataread",
-            default = "",
-            params = {
+            key="results_path", name = "Path to your results",
+            group="dataread",
+            default="",
+            params={
                 "placeholder": "Write the path here..."
             },
-            width = "s100% m50% l33%",
             help = "Directory where the files with the simulations results are located.<br> This path has to be relative to the root fdf.",
         ),
 
-        DropdownInput(
+        ListInput(key="entry_points_order", name="Entry points order",
+            group="dataread",
+            default=[],
+            params={
+                "itemInput": OptionsInput(key="-", name="-", params={"options": []})
+            },
+            help="""Order with which entry points will be attempted."""
+        ),
+
+        OptionsInput(
             key="backend", name="Backend",
             default=None,
-            params = {},
-            width = "s100% m50% l33%",
-            help = "Directory where the files with the simulations results are located.<br> This path has to be relative to the root fdf.",
+            params={},
+            help="Directory where the files with the simulations results are located.<br> This path has to be relative to the root fdf.",
         ),
 
     )
@@ -200,7 +203,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
     def read_data_methods(self):
         entry_points_names = [entry_point._method.__name__ for entry_point in self.entry_points]
 
-        return ["_before_read", "_after_read", *entry_points_names, *self._update_methods["read_data"]]
+        return ["_before_read", "_after_read", "_read_from_sources", *entry_points_names, *self._update_methods["read_data"]]
 
     @property
     def set_data_methods(self):
@@ -600,6 +603,16 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
             # After registering an entry point, we will just set the method
             setattr(cls, key, _populate_with_settings(val._method, [param["key"] for param in cls._get_class_params()[0]]))
 
+        entry_points_order = cls.get_class_param("entry_points_order")
+        entry_points_order.modify_item_input(
+            "inputField.params.options",
+            [{"label": entry._name, "value": entry._name} for entry in cls.entry_points]
+        )
+        entry_points_order.modify(
+            "default",
+            [entry._name for entry in sorted(cls.entry_points, key=lambda entry: entry._sort_key)]
+        )
+
         cls.backends = Backends(cls)
 
     @vizplotly_settings('before', init=True)
@@ -698,7 +711,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
         """
         if key in ["_backend", "_get_shared_attr"]:
             pass
-        elif hasattr(self._backend, key):
+        elif hasattr(self, "_backend") and hasattr(self._backend, key):
             return getattr(self._backend, key)
         else:
             #If it is a childPlot, maybe the attribute is in the shared storage to save memory and time
@@ -767,7 +780,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
 
         return self
 
-    def _read_from_sources(self):
+    def _read_from_sources(self, entry_points_order):
         """ Tries to read the data from the different available entry points in the plot class
 
         If it fails to read from all entry points, it raises an exception.
@@ -782,7 +795,14 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
         # Try to read data using all the different entry points
         # This is just a first implementation. One of the reasons entry points
         # have been implemented is that we can do smarter things than this.
-        for entry_point in self.entry_points:
+        for entry_point_name in entry_points_order:
+            for entry_point in self.entry_points:
+                if entry_point._name == entry_point_name:
+                    break
+            else:
+                warn(f"Entry point {entry_point_name} not found in {self.__class__.__name__}")
+                continue
+
             try:
                 returns = getattr(self, entry_point._method_attr)()
                 self.source = entry_point
@@ -861,7 +881,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
                     try:
                         path = fdf_sile.dir_file(filename, results_path)
                         return self.get_sile(path, *args, follow=True, follow_kwargs={}, file_contents=None, **kwargs)
-                    except:
+                    except Exception:
                         pass
                 else:
                     raise FileNotFoundError(f"Tried to infer {setting_key} from the 'root_fdf', "
@@ -1058,7 +1078,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
             try:
                 fdf_sile = self.get_sile("root_fdf")
                 self.geometry = fdf_sile.read_geometry(output = True)
-            except:
+            except Exception:
                 pass
 
         if not self.PROVIDED_H and (not hasattr(self, "H") or NEW_FDF):
@@ -1168,6 +1188,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
             if the plot is displayed in a jupyter notebook, whether you want to
             get the figure widget as a return so that you can act on it.
         """
+        from IPython.display import display
 
         def _try_backend():
             if self._backend is None:
@@ -1181,11 +1202,9 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
 
         if not isinstance(self, Animation):
 
-            from IPython.display import display
-
             try:
                 widget = self._backend.get_ipywidget()
-            except:
+            except Exception:
                 return _try_backend()
 
             if False and self._widgets["events"]:
@@ -1215,6 +1234,7 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
         fig_widget: plotly.graph_objs.FigureWidget
             The figure widget that we need to extend.
         """
+        from IPython.display import display
         from ipyevents import Event
         from ipywidgets import HTML, Output
 
@@ -1405,15 +1425,16 @@ class Plot(ShortCutable, Configurable, metaclass=PlotMeta):
 
 class EntryPoint:
 
-    def __init__(self, name, setting_key, method, instance=None):
+    def __init__(self, name, sort_key, setting_key, method, instance=None):
         self._name = name
+        self._sort_key = sort_key
         self._method_attr = method.__name__
         self._setting_key = setting_key
         self._method = method
         self.help = method.__doc__
 
 
-def entry_point(name):
+def entry_point(name, sort_key=0):
     """ Helps registering entry points for plots
 
     See the usage section to get a fast intuitive way of how to use it.
@@ -1445,8 +1466,10 @@ def entry_point(name):
     -----------
     name: str
         the name of the entry point that the decorated function implements.
+    sort_key: any
+        the entry points order will be sorted according to this key.
     """
-    return partial(EntryPoint, name, ())
+    return partial(EntryPoint, name, sort_key, ())
 
 #------------------------------------------------
 #       CLASSES TO SUPPORT COMPOSITE PLOTS
@@ -1463,6 +1486,8 @@ class MultiplePlot(Plot):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -1737,6 +1762,8 @@ class Animation(MultiplePlot):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -1776,7 +1803,7 @@ class Animation(MultiplePlot):
             help = "The number of frames that should be interpolated between two plots. This is only meaningful in the blender backend."
         ),
 
-        SwitchInput(
+        BoolInput(
             key='redraw', name='Redraw each frame',
             default=True,
             group='animation',
@@ -1785,7 +1812,7 @@ class Animation(MultiplePlot):
             Set this to False if you are sure that the frames contain the same number of traces, otherwise new traces will not appear."""
         ),
 
-        DropdownInput(
+        OptionsInput(
             key='ani_method', name="Animation method",
             default=None,
             group='animation',
@@ -1851,6 +1878,8 @@ class SubPlots(MultiplePlot):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -1862,7 +1891,7 @@ class SubPlots(MultiplePlot):
 
     _parameters = (
 
-        DropdownInput(key='arrange', name='Automatic arrangement method',
+        OptionsInput(key='arrange', name='Automatic arrangement method',
             default='rows',
             params={
                 'options': [

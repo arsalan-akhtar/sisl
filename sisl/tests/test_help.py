@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import pytest
+import sys
 
 import math as m
 import numpy as np
@@ -24,13 +25,15 @@ def test_array_fill_repeat2():
         array_fill_repeat([1, 2, 3], 20)
 
 
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Datatype cannot be int64 on windows")
 def test_get_dtype1():
     assert np.int32 == get_dtype(1)
     assert np.int64 == get_dtype(1, int=np.int64)
 
 
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Datatype cannot be int64 on windows")
 def test_dtype_complex_to_real():
-    for d in [np.int32, np.int64, np.float32, np.float64]:
+    for d in (np.int32, np.int64, np.float32, np.float64):
         assert dtype_complex_to_real(d) == d
     assert dtype_complex_to_real(np.complex64) == np.float32
     assert dtype_complex_to_real(np.complex128) == np.float64

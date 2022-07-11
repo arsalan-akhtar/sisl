@@ -1,3 +1,6 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from abc import abstractmethod
 from ..backend import Backend
 
@@ -53,8 +56,10 @@ class BandsBackend(Backend):
 
         if "spin" not in filtered_bands.coords:
             filtered_bands = filtered_bands.expand_dims("spin")
+
         # Now loop through all bands to draw them
-        for ispin, spin_bands in enumerate(filtered_bands.transpose('spin', 'band', 'k')):
+        for spin_bands in filtered_bands.transpose('spin', 'band', 'k'):
+            ispin = int(spin_bands.spin) if "spin" in spin_bands.coords else 0
             line_style = line
             if ispin == 1:
                 line_style.update(spindown_line)

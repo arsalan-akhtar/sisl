@@ -1,18 +1,16 @@
 include MANIFEST.in
 include LICENSE
-include CHANGELOG
+include CHANGELOG.md
 include README.md
 include setup.py
 include pyproject.toml
+include sisl/_version.py
 
-graft doc
+graft docs
 
 graft sisl
 
-include sisl/info.py
-
-recursive-include toolbox *.pxd *.md README
-recursive-include toolbox/siesta/minimizer *.yaml
+recursive-include toolbox *.pxd *.md *.yaml *.yml README
 recursive-include sisl *.pxd
 
 exclude DEPLOY.md

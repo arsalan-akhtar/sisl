@@ -5,7 +5,6 @@
 
 This class is the basis of many different objects.
 """
-
 import math
 import warnings
 from numbers import Integral
@@ -49,7 +48,7 @@ class SuperCell:
     """
 
     # We limit the scope of this SuperCell object.
-    __slots__ = ('cell', '_origin', 'volume', 'nsc', 'n_s', '_sc_off', '_isc_off')
+    __slots__ = ('cell', '_origin', 'nsc', 'n_s', '_sc_off', '_isc_off')
 
     def __init__(self, cell, nsc=None, origin=None):
 
@@ -67,9 +66,6 @@ class SuperCell:
             if self._origin.size != 3:
                 raise ValueError("Origin *must* be 3 numbers.")
 
-        # Set the volume
-        self._update_vol()
-
         self.nsc = _a.onesi(3)
         # Set the super-cell
         self.set_nsc(nsc=nsc)
@@ -78,6 +74,15 @@ class SuperCell:
     def length(self):
         """ Length of each lattice vector """
         return fnorm(self.cell)
+
+    @property
+    def volume(self):
+        """ Volume of cell """
+        return abs(dot3(self.cell[0, :], cross3(self.cell[1, :], self.cell[2, :])))
+
+    def area(self, ax0, ax1):
+        """ Calculate the area spanned by the two axis `ax0` and `ax1` """
+        return (cross3(self.cell[ax0, :], self.cell[ax1, :]) ** 2).sum() ** 0.5
 
     @property
     def origin(self):
@@ -100,10 +105,6 @@ class SuperCell:
     def origo(self, origin):
         """ Set origin """
         self._origin[:] = origin
-
-    def area(self, ax0, ax1):
-        """ Calculate the area spanned by the two axis `ax0` and `ax1` """
-        return (cross3(self.cell[ax0, :], self.cell[ax1, :]) ** 2).sum() ** 0.5
 
     def toCuboid(self, orthogonal=False):
         """ A cuboid with vectors as this unit-cell and center with respect to its origin
@@ -172,9 +173,6 @@ class SuperCell:
         gamma = acos(dot3(cell[0, :], cell[1, :])) * f
 
         return abc[0], abc[1], abc[2], alpha, beta, gamma
-
-    def _update_vol(self):
-        self.volume = abs(dot3(self.cell[0, :], cross3(self.cell[1, :], self.cell[2, :])))
 
     def _fill(self, non_filled, dtype=None):
         """ Return a zero filled array of length 3 """
@@ -369,7 +367,6 @@ class SuperCell:
                               'due to insufficient accuracy (try increase the tolerance)')
 
         # Reduce problem to allowed values below the tolerance
-        x = x[idx, :]
         ix = ix[idx, :]
 
         # Reduce to total repetitions
@@ -381,7 +378,7 @@ class SuperCell:
 
         # Reduce the non-set axis
         if not axis is None:
-            for ax in [0, 1, 2]:
+            for ax in (0, 1, 2):
                 if ax not in axis:
                     ireps[ax] = 1
 
@@ -670,17 +667,40 @@ class SuperCell:
 
         return idx
 
-    def scale(self, scale):
+    def vertices(self):
+        """Vertices of the cell
+
+        Returns
+        --------
+        array of shape (2, 2, 2, 3):
+            The coordinates of the vertices of the cell. The first three dimensions
+            correspond to each cell axis (off, on), and the last one contains the xyz coordinates.
+        """
+        verts = np.zeros([2, 2, 2, 3])
+        verts[1, :, :, 0] = 1
+        verts[:, 1, :, 1] = 1
+        verts[:, :, 1, 2] = 1
+        return verts @ self.cell
+
+    def scale(self, scale, what="abc"):
         """ Scale lattice vectors
 
         Does not scale `origin`.
 
         Parameters
         ----------
-        scale : ``float``
-           the scale factor for the new lattice vectors
+        scale : float or (3,)
+           the scale factor for the new lattice vectors.
+        what: {"abc", "xyz"}
+           If three different scale factors are provided, whether each scaling factor
+           is to be applied on the corresponding lattice vector ("abc") or on the
+           corresponding cartesian coordinate ("xyz").
         """
-        return self.copy(self.cell * scale)
+        if what == "abc":
+            return self.copy((self.cell.T * scale).T)
+        if what == "xyz":
+            return self.copy(self.cell * scale)
+        raise ValueError(f"{self.__class__.__name__}.scale argument what='{what}' is not in ['abc', 'xyz'].")
 
     def tile(self, reps, axis):
         """ Extend the unit-cell `reps` times along the `axis` lattice vector
@@ -724,11 +744,20 @@ class SuperCell:
         """
         return self.tile(reps, axis)
 
-    def cut(self, seps, axis):
-        """ Cuts the cell into several different sections. """
+    def untile(self, reps, axis):
+        """Reverses a `SuperCell.tile` and returns the segmented version
+
+        See Also
+        --------
+        tile : opposite of this method
+        """
         cell = np.copy(self.cell)
-        cell[axis, :] /= seps
+        cell[axis, :] /= reps
         return self.copy(cell)
+
+    unrepeat = untile
+
+    cut = deprecate_method("*.cut is deprecated, use .untile instead", "0.13")(untile)
 
     def append(self, other, axis):
         """ Appends other `SuperCell` to this grid along axis """
@@ -1080,19 +1109,24 @@ class SuperCellChild:
                 try:
                     if isinstance(getattr(self, a), SuperCellChild):
                         getattr(self, a).set_supercell(self.sc)
-                except:
+                except Exception:
                     pass
 
     set_sc = set_supercell
 
     @property
+    def length(self):
+        """ Returns the inherent `SuperCell` objects `length` """
+        return self.sc.length
+
+    @property
     def volume(self):
-        """ Returns the inherent `SuperCell` objects `vol` """
+        """ Returns the inherent `SuperCell` objects `volume` """
         return self.sc.volume
 
     def area(self, ax0, ax1):
         """ Calculate the area spanned by the two axis `ax0` and `ax1` """
-        return (cross3(self.sc.cell[ax0, :], self.sc.cell[ax1, :]) ** 2).sum() ** 0.5
+        return self.sc.area(ax0, ax1)
 
     @property
     def cell(self):

@@ -49,7 +49,6 @@ Known problems:
 """
 import sys
 from pathlib import Path
-import warnings
 import argparse as argp
 import numpy as np
 import sisl as si
@@ -227,7 +226,6 @@ def solve_poisson(geometry, shape, radius="empirical",
 
         # Create slices
         sl = [slice(0, g) for g in grid.shape]
-        new_sl = sl[:]
 
         # One boundary at a time
         for i in (0, 1, 2):

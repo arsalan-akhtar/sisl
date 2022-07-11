@@ -3,11 +3,13 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import logging
 from numbers import Number
+import numpy as np
+
 from sisl.io import get_sile
 from sisl.utils import direction
 import sisl.io.siesta as io_siesta
 
-from ._path import path_abs, path_rel_or_abs
+from ._path import path_rel_or_abs
 from ._metric import Metric
 
 
@@ -19,7 +21,7 @@ _log = logging.getLogger("sisl_toolbox.siesta.minimize")
 
 def _siesta_out_accept(out):
     if not isinstance(out, io_siesta.outSileSiesta):
-        out = io_siesta.outSileSiesta(self.out)
+        out = io_siesta.outSileSiesta(out)
     accept = out.completed()
     if accept:
         with out:
@@ -71,8 +73,8 @@ class EigenvalueMetric(SiestaMetric):
             self.dist = dist(eig_ref)
         else:
             try:
-                a = eig_ref * dist
-            except:
+                eig_ref * dist
+            except Exception:
                 raise ValueError(f"{self.__class__.__name__} was passed `dist` which was not "
                                  "broadcastable to `eig_ref`. Please ensure compatibility.")
             self.dist = dist.copy()
@@ -95,7 +97,7 @@ class EigenvalueMetric(SiestaMetric):
             metric = (((eig - self.eig_ref) * self.dist) ** 2).sum() ** 0.5 / eig.shape[1]
             metric = self.failure(metric, False)
             _log.debug(f"metric.eigenvalue [{self.eig_file}] success {metric}")
-        except:
+        except Exception:
             metric = self.failure(0., True)
             _log.warning(f"metric.eigenvalue [{self.eig_file}] fail {metric}")
         return metric
@@ -185,7 +187,7 @@ class ForceMetric(SiestaMetric):
             force = self.force(get_sile(self.file).read_force())
             metric = self.failure(force, False)
             _log.debug(f"metric.force [{self.file}] success {metric}")
-        except:
+        except Exception:
             metric = self.failure(0., True)
             _log.debug(f"metric.force [{self.file}] fail {metric}")
         return metric

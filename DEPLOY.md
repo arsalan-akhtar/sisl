@@ -16,50 +16,31 @@ below sequence.
 
 The release cycle should be performed like this:
 
-1. Increment the release numbers in the top-directory
-   setup.py script
-   These are
+1. Update released versions in `CHANGELOG.md` and `CITATION.cff`
 
-		MAJOR
-		MINOR
-		MICRO
+2. Commit changes.
 
-	Alltogether the version number _is_:
-	`VERSION=MAJOR.MINOR.MICRO`
-	In the following `VERSION` should be replaced by the correct release
-	numbers
-	
-2. Set the variable:
-
-	    ISRELEASED = True
-
-3. Set the variable `GIT_REVISION` to the latest commit.
-   This means that the revision specification for the release
-   actually corresponds to the commit just before the actual release.
-   You can get the commit hash by:
-
-        git rev-parse HEAD
-
-        GIT_REVISION = <git rev-parse HEAD>
-
-4. Add `setup.py` to the commit and commit using:
-
-    	git commit -s -m "sisl release: VERSION"
-
-   with the corresponding version number.
-
-5. Tag the commit with:
+3. Tag the commit with:
 
 		git tag -a "vVERSION" -m "Releasing vVERSION"
 
-6. Create tarballs and wheels and upload them
+4. Create tarballs and wheels and upload them
 
-		rm -rf dist
-		python setup.py sdist bdist_wheel
-		twine upload dist/sisl-VERSION*.tar.gz
-		twine upload dist/sisl-VERSION*.whl
+		python3 -m pip install --upgrade build
+		python3 -m build
+		python3 -m pip install --upgrade twine
+		# requires .pypirc with testpypi section
+		python3 -m twine upload --repository testpypi dist/*
 
-7. Create conda uploads.
+		# test installation, preferably in a venv
+		python3 -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ sisl
+
+        # once checked, upload to pypi
+		python3 -m twine upload dist/sisl-0.12.0.tar.gz
+
+5. Make release notes by using `tools/changelog.py` to create the output
+
+6. Create conda uploads.
 
    The conda uploads are based on conda-forge and an associated
    sisl-feedstock is used. To update it, follow these steps:

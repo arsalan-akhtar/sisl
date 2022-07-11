@@ -29,7 +29,7 @@ def argv_negative_fix(argv):
         try:
             strseq(complex, a)
             strmap(complex, a)
-        except:
+        except Exception:
             rgv.append(a)
         else:
             rgv.append(' ' + a)
@@ -101,19 +101,19 @@ def add_sisl_version_cite_arg(parser):
     parser : `argparse.ArgumentParser`
        the parser to add the version string too
     """
-    from sisl.info import version, git_revision, git_count, bibtex
+    from sisl import __version__, __bibtex__
 
     group = parser.add_argument_group("version information")
 
     class PrintVersion(argparse.Action):
         def __call__(self, parser, ns, values, option_string=None):
-            print(f"sisl: {version}\ngit-hash: {git_count}")
+            print(f"sisl: {__version__}")
     group.add_argument('--version', nargs=0, action=PrintVersion,
-                       help=f'Show detailed sisl version information (v{version})')
+                       help=f'Show detailed sisl version information (v{__version__})')
 
     class PrintCite(argparse.Action):
         def __call__(self, parser, ns, values, option_string=None):
-            print(f"BibTeX:\n{bibtex}")
+            print(f"BibTeX:\n{__bibtex__}")
     group.add_argument('--cite', nargs=0, action=PrintCite,
                        help='Show the citation required when using sisl')
 
@@ -195,6 +195,9 @@ def default_ArgumentParser(*A_args, **A_kwargs):
             if parser is None:
                 # Create the new parser and insert in the argument list
                 parser = argparse.ArgumentParser(*A_args, **A_kwargs)
+            elif "description" in A_kwargs:
+                parser.description = A_kwargs["description"]
+
             return func(self, parser, *args, **kwargs)
         return new_func
     return default_AP

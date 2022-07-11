@@ -1,5 +1,8 @@
+# For installation
+wheel
+setuptools>=46.0
+setuptools_scm>=6.2
 # For running
-setuptools
 cython
 numpy>=1.13
 scipy>=0.18
@@ -8,9 +11,13 @@ pyparsing>=1.5.7
 matplotlib
 ipykernel
 nbsphinx
-matplotlib
 dill>=0.3.2
 pathos
 xarray>=0.10.0
 scikit-image
 plotly
+sphinx-gallery
+sphinx-rtd-theme
+tqdm
+ipywidgets
+kaleido

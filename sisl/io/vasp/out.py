@@ -1,9 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import numpy as np
-
-# Import sile objects
 from .sile import SileVASP
 from ..sile import add_sile, sile_fh_open
 
@@ -118,7 +115,7 @@ class outSileVASP(SileVASP):
                 line = next(itt)
             line = next(itt)
             E["free"] = float(line.split()[-2])
-            line = next(itt)
+            next(itt)
             line = next(itt)
             v = line.split()
             E["total"] = float(v[4])
@@ -134,7 +131,7 @@ class outSileVASP(SileVASP):
         try:
             # this just puts the job_completed flag. But otherwise not used
             self.cpu_time()
-        except:
+        except Exception:
             pass
 
         if all:

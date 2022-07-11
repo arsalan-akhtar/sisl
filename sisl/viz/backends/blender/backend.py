@@ -1,3 +1,6 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from ..templates.backend import Backend, MultiplePlotBackend, AnimationBackend
 from ...plot import MultiplePlot, Animation
 
@@ -33,11 +36,12 @@ def add_line_frame(ani_objects, child_objects, frame):
 
         # Loop through all the materials that the object might have associated
         for ani_material, child_material in zip(ani_obj.data.materials, child_obj.data.materials):
-            ani_material.node_tree.nodes["Principled BSDF"].inputs[0].default_value = child_material.node_tree.nodes["Principled BSDF"].inputs[0].default_value
-            ani_material.node_tree.nodes["Principled BSDF"].inputs[0].keyframe_insert(data_path="default_value", frame=frame)
+            ani_mat_inputs = ani_material.node_tree.nodes["Principled BSDF"].inputs
+            child_mat_inputs = child_material.node_tree.nodes["Principled BSDF"].inputs
 
-            ani_material.node_tree.nodes["Principled BSDF"].inputs[19].default_value = child_material.node_tree.nodes["Principled BSDF"].inputs[19].default_value
-            ani_material.node_tree.nodes["Principled BSDF"].inputs[19].keyframe_insert(data_path="default_value", frame=frame)
+            for input_key in ("Base Color", "Alpha"):
+                ani_mat_inputs[input_key].default_value = child_mat_inputs[input_key].default_value
+                ani_mat_inputs[input_key].keyframe_insert(data_path="default_value", frame=frame)
 
 
 class BlenderBackend(Backend):
@@ -185,8 +189,10 @@ class BlenderBackend(Backend):
             mat = bpy.data.materials.new("material")
             mat.use_nodes = True
 
-            mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (*color, 1)
-            mat.node_tree.nodes["Principled BSDF"].inputs[19].default_value = opacity
+            BSDF_inputs = mat.node_tree.nodes["Principled BSDF"].inputs
+
+            BSDF_inputs["Base Color"].default_value = (*color, 1)
+            BSDF_inputs["Alpha"].default_value = opacity
 
             obj.active_material = mat
 
@@ -228,7 +234,7 @@ class BlenderAnimationBackend(BlenderBackend, AnimationBackend):
                 # Some objects don't have materials associated.
                 try:
                     new_obj.data.materials[0] = obj.data.materials[0].copy()
-                except:
+                except Exception:
                     pass
                 collection.objects.link(new_obj)
 

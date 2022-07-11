@@ -1,3 +1,6 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from collections import defaultdict
 import itertools
 from functools import partial
@@ -296,7 +299,7 @@ class PlotlyBackend(Backend):
                 f'{ax1}axis': self.layout[f'{ax2}axis'].to_plotly_json(),
                 f'{ax2}axis': self.layout[f'{ax1}axis'].to_plotly_json(),
             }, overwrite=True)
-        except:
+        except Exception:
             pass
 
         return self

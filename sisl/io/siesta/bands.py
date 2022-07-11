@@ -1,8 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import numpy as np
-
 from ..sile import add_sile, sile_fh_open
 from .sile import SileSiesta
 
@@ -12,16 +10,24 @@ from sisl.utils import strmap
 from sisl.utils.cmd import default_ArgumentParser, default_namespace
 
 
-__all__ = ['bandsSileSiesta']
+__all__ = ["bandsSileSiesta"]
 
 
 @set_module("sisl.io.siesta")
 class bandsSileSiesta(SileSiesta):
     """ Bandstructure information """
 
+    @sile_fh_open(True)
+    def read_fermi_level(self):
+        """ Returns the Fermi level in the bands file """
+        # Luckily the data is in eV
+        return float(self.readline())
+
     @sile_fh_open()
     def read_data(self, as_dataarray=False):
         """ Returns data associated with the bands file
+
+        The energy levels are shifted with respect to the Fermi-level.
 
         Parameters
         --------
@@ -33,38 +39,46 @@ class bandsSileSiesta(SileSiesta):
         band_lines = False
 
         # Luckily the data is in eV
-        Ef = float(self.readline())
+        Ef = self.read_fermi_level()
+
         # Read the total length of the path (not used)
         _, _ = map(float, self.readline().split())
         l = self.readline()
         try:
             _, _ = map(float, l.split())
             band_lines = True
-        except:
+        except Exception:
             # We are dealing with a band-points file
             pass
 
         # orbitals, n-spin, n-k
+        nk2 = 3
         if band_lines:
             l = self.readline()
+            nk2 = 1
         no, ns, nk = map(int, l.split())
 
         # Create the data to contain all band points
-        b = _a.emptyd([nk, ns, no])
+        eb = _a.emptyd([nk, ns, no])
+        k = _a.emptyd([nk, nk2])
+        for ik in range(nk):
+            l = [float(x) for x in self.readline().split()]
+            for i in range(nk2):
+                k[ik, i] = l[0]
+                del l[0]
+
+            # Now populate the eigenvalues
+            while len(l) < ns * no:
+                l.extend([float(x) for x in self.readline().split()])
+            l = _a.arrayd(l)
+            eb[ik, :, :] = l.reshape(ns, no) - Ef
+
+        vals = (k, eb)
 
         # for band-lines
         if band_lines:
-            k = _a.emptyd([nk])
-            for ik in range(nk):
-                l = [float(x) for x in self.readline().split()]
-                k[ik] = l[0]
-                del l[0]
-                # Now populate the eigenvalues
-                while len(l) < ns * no:
-                    l.extend([float(x) for x in self.readline().split()])
-                l = _a.arrayd(l)
-                l.shape = (ns, no)
-                b[ik, :, :] = l[:, :] - Ef
+            k.shape = (-1,)
+
             # Now we need to read the labels for the points
             xlabels = []
             labels = []
@@ -73,41 +87,25 @@ class bandsSileSiesta(SileSiesta):
                 l = self.readline().split()
                 xlabels.append(float(l[0]))
                 labels.append((' '.join(l[1:])).replace("'", ''))
-            vals = (xlabels, labels), k, b
-
-        else:
-            k = _a.emptyd([nk, 3])
-            for ik in range(nk):
-                l = [float(x) for x in self.readline().split()]
-                k[ik, :] = l[0:3]
-                del l[2]
-                del l[1]
-                del l[0]
-                # Now populate the eigenvalues
-                while len(l) < ns * no:
-                    l.extend([float(x) for x in self.readline().split()])
-                l = _a.arrayd(l)
-                l.shape = (ns, no)
-                b[ik, :, :] = l[:, :] - Ef
-            vals = k, b
+            vals = (xlabels, labels), *vals
 
         if as_dataarray:
             from xarray import DataArray
 
             ticks = {"ticks": xlabels, "ticklabels": labels} if band_lines else {}
 
-            return DataArray(b, name="Energy", attrs=ticks,
+            vals = DataArray(eb, name="Energy", attrs=ticks,
                              coords=[("k", k),
-                                     ("spin", _a.arangei(0, b.shape[1])),
-                                     ("band", _a.arangei(0, b.shape[2]))])
+                                     ("spin", _a.arangei(0, eb.shape[1])),
+                                     ("band", _a.arangei(0, eb.shape[2]))])
 
         return vals
 
     @default_ArgumentParser(description="Manipulate bands file in sisl.")
     def ArgumentParser(self, p=None, *args, **kwargs):
         """ Returns the arguments that is available for this Sile """
-        #limit_args = kwargs.get('limit_arguments', True)
-        short = kwargs.get('short', False)
+        #limit_args = kwargs.get("limit_arguments", True)
+        short = kwargs.get("short", False)
 
         def opts(*args):
             if short:
@@ -121,20 +119,19 @@ class bandsSileSiesta(SileSiesta):
         # parser.
         # This will enable custom actions to interact with the geometry in a
         # straight forward manner.
-        d = {
-            "_bands": self.read_data(),
-            "_Emap": None,
-        }
-        namespace = default_namespace(**d)
+        namespace = default_namespace(
+            _bands= self.read_data(),
+            _Emap=None,
+        )
 
         # Energy grabs
         class ERange(argparse.Action):
 
             def __call__(self, parser, ns, value, option_string=None):
                 ns._Emap = strmap(float, value)[0]
-        p.add_argument('--energy', '-E',
+        p.add_argument("--energy", "-E",
                        action=ERange,
-                       help='Denote the sub-section of energies that are plotted: "-1:0,1:2" [eV]')
+                       help="Denote the sub-section of energies that are plotted: '-1:0,1:2' [eV]")
 
         class BandsPlot(argparse.Action):
 
@@ -153,7 +150,7 @@ class bandsSileSiesta(SileSiesta):
                     ax.set_title(title)
                     for ib in range(y.shape[0]):
                         ax.plot(x, y[ib, :])
-                    ax.set_ylabel('E-Ef [eV]')
+                    ax.set_ylabel("E-Ef [eV]")
                     ax.set_xlim(x.min(), x.max())
                     if not E is None:
                         ax.set_ylim(E[0], E[1])
@@ -161,26 +158,26 @@ class bandsSileSiesta(SileSiesta):
                 if b.shape[1] == 2:
                     _, ax = plt.subplots(2, 1)
                     ax[0].set_xticks(xlbls)
-                    ax[0].set_xticklabels([''] * len(xlbls))
+                    ax[0].set_xticklabels([""] * len(xlbls))
                     ax[1].set_xticks(xlbls)
                     ax[1].set_xticklabels(lbls, rotation=45)
                     # We must plot spin-up/down separately
-                    for i, ud in enumerate(['UP', 'DOWN']):
-                        myplot(ax[i], 'Bandstructure SPIN-'+ud, k, b[:, i, :], ns._Emap)
+                    for i, ud in enumerate(["UP", "DOWN"]):
+                        myplot(ax[i], f"Bandstructure SPIN-{ud}", k, b[:, i, :], ns._Emap)
                 else:
                     plt.figure()
                     ax = plt.gca()
                     ax.set_xticks(xlbls)
                     ax.set_xticklabels(lbls, rotation=45)
-                    myplot(ax, 'Bandstructure', k, b[:, 0, :], ns._Emap)
+                    myplot(ax, "Bandstructure", k, b[:, 0, :], ns._Emap)
                 if value is None:
                     plt.show()
                 else:
                     plt.savefig(value)
-        p.add_argument(*opts('--plot', '-p'), action=BandsPlot, nargs='?', metavar='FILE',
-                       help='Plot the bandstructure from the .bands file, possibly saving to a file.')
+        p.add_argument(*opts("--plot", "-p"), action=BandsPlot, nargs="?", metavar="FILE",
+                       help="Plot the bandstructure from the .bands file, possibly saving to a file.")
 
         return p, namespace
 
 
-add_sile('bands', bandsSileSiesta, gzip=True)
+add_sile("bands", bandsSileSiesta, gzip=True)

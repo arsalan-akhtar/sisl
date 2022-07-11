@@ -31,6 +31,15 @@ def siesta_test_files(sisl_files):
     return _siesta_test_files
 
 
+@pytest.fixture(scope="session")
+def vasp_test_files(sisl_files):
+
+    def _siesta_test_files(path):
+        return sisl_files(osp.join('sisl', 'io', 'vasp', path))
+
+    return _siesta_test_files
+
+
 class _TestPlot:
 
     @pytest.fixture(scope="class", params=[None])
@@ -52,9 +61,16 @@ class _TestPlot:
             msg = f'{", ".join(importables[True]) + " is/are importable"}; {msg}'
 
         try:
-            return init_func(backend=backend, _debug=True)
+            yield init_func(backend=backend, _debug=True)
         except Exception as e:
-            pytest.skip(f"Plot was not initialized. Error: {e}. \n\n{msg}")
+            pytest.xfail(f"Plot was not initialized. Error: {e}. \n\n{msg}")
+
+        # If we are testing with the matplotlib backend, close all the figures that
+        # might have been created.
+        if backend == "matplotlib":
+            import matplotlib.pyplot as plt
+
+            plt.close("all")
 
     @pytest.fixture(scope="class")
     def test_attrs(self, init_func_and_attrs):

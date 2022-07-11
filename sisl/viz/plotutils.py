@@ -11,19 +11,19 @@ import itertools
 try:
     from pathos.pools import ProcessPool as Pool
     pathos_avail = True
-except:
+except Exception:
     pathos_avail = False
 try:
     import tqdm
     tqdm_avail = True
-except:
+except Exception:
     tqdm_avail = False
 
 from copy import deepcopy
 
 from sisl.messages import info
 from sisl.io.sile import get_siles, get_sile_rules
-from sisl._environ import register_environ_variable, get_environ_variable
+from sisl._environ import get_environ_variable
 
 __all__ = ["running_in_notebook", "check_widgets",
            "get_plot_classes", "get_plotable_siles", "get_plotable_variables",
@@ -86,7 +86,7 @@ def check_widgets():
         try:
             import ipyevents
             widgets['events_avail'] = True
-        except:
+        except Exception:
             pass
     if 'ipyevents' in err:
         widgets['events_error'] = True
@@ -601,10 +601,7 @@ def find_plotable_siles(dir_path=None, depth=0):
 #         Multiprocessing
 #-------------------------------------
 
-register_environ_variable("SISL_NPROCS_VIZ", max(os.cpu_count() - 1, 1),
-                          description="Maximum number of processors used for parallel plotting",
-                          process=int)
-_MAX_NPROCS = get_environ_variable("SISL_NPROCS_VIZ")
+_MAX_NPROCS = get_environ_variable("SISL_VIZ_NUM_PROCS")
 
 
 def _apply_method(args_tuple):

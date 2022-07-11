@@ -24,5 +24,4 @@ like `numpy` and `scipy`.
 
 """
 from .base import *
-
-__all__ = [s for s in dir() if not s.startswith('_')]
+from .special import *

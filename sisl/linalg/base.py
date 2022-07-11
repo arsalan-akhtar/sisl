@@ -9,7 +9,7 @@ import numpy as np
 from numpy import atleast_1d, atleast_2d
 from scipy.linalg.blas import get_blas_funcs
 from scipy.linalg.lapack import get_lapack_funcs
-from scipy.linalg.misc import LinAlgError, _datacopied
+from scipy.linalg import LinAlgError
 from scipy._lib._util import _asarray_validated
 import scipy.linalg as sl
 import scipy.sparse.linalg as ssl
@@ -18,6 +18,19 @@ from sisl._internal import set_module
 
 
 __all__ = ['linalg_info']
+
+
+def _datacopied(arr, original):
+    """
+    Strict check for `arr` not sharing any data with `original`,
+    under the assumption that arr = asarray(original)
+
+    """
+    if arr is original:
+        return False
+    if not isinstance(original, np.ndarray) and hasattr(original, '__array__'):
+        return False
+    return arr.base is None
 
 
 # Placeholder for basic linear algebra methods
@@ -255,6 +268,10 @@ eigvalsh_destroy = _partial(sl.eigvalsh, check_finite=False, overwrite_a=True, o
 eigvalsh_dc_destroy = eigvalsh_destroy
 eigvalsh_qr_destroy = _partial(sl.eigvalsh, check_finite=False, overwrite_a=True, overwrite_b=True, turbo=False)
 __all__ += _append('eigvalsh_', ['destroy', 'dc_destroy', 'qr_destroy'])
+
+cholesky = _partial(sl.cholesky, check_finite=False)
+cholesky_destroy = _partial(sl.cholesky, check_finite=False, overwrite_a=True)
+__all__ += _append('cholesky', ['', '_destroy'])
 
 # SVD problem
 svd = _partial(sl.svd, check_finite=False, overwrite_a=False)

@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import os
-import inspect
 from pathlib import Path
 from textwrap import dedent
 
@@ -69,7 +68,12 @@ def get_environ_variable(name):
 
 
 # We register a few variables that may be used several places
-register_environ_variable("SISL_NPROCS", os.cpu_count(),
+try:
+    _nprocs = len(os.sched_getaffinity(0))
+except Exception:
+    _nprocs = 1
+
+register_environ_variable("SISL_NUM_PROCS", min(1, _nprocs),
                           "Maximum number of CPU's used for parallel computing",
                           process=int)
 

@@ -3,8 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from numbers import Integral
 from functools import reduce
-from operator import eq as op_eq
-from itertools import zip_longest
 
 import numpy as np
 # To speed up the _extend algorithm we limit lookups
@@ -31,9 +29,9 @@ from scipy.sparse import (
 from ._internal import set_module
 from . import _array as _a
 from ._array import asarrayi, arrayi, fulli, array_arange
-from ._indices import indices, indices_only, sorted_unique
+from ._indices import indices, indices_only
 from .messages import warn, SislError
-from ._help import array_fill_repeat, get_dtype, isiterable
+from ._help import array_fill_repeat, isiterable
 from .utils.mathematics import intersect_and_diff_sets
 from ._sparse import sparse_dense
 
@@ -1418,7 +1416,8 @@ class SparseCSR(NDArrayOperatorsMixin):
         Parameters
         ----------
         matrix : array_like
-            transformation matrix of shape :math:`m \times n`
+            transformation matrix of shape :math:`m \times n`, :math:`n` should correspond to
+            the number of elements in ``self.shape[2]``
         dtype : numpy.dtype, optional
             defaults to the common dtype of the object and the transformation matrix
         """
@@ -1430,10 +1429,10 @@ class SparseCSR(NDArrayOperatorsMixin):
         if matrix.shape[1] != self.shape[2]:
             raise ValueError(f"{self.__class__.__name__}.transform incompatible "
                              f"transformation matrix and spin dimensions: "
-                             f"matrix.shape={matrix.shape} and self.spin={N} ; out.spin={M}")
+                             f"matrix.shape={matrix.shape} and self.spin={self.shape[2]} ; out.spin={matrix.shape[0]}")
 
         # set dimension of new sparse matrix
-        new_dim = len(matrix)
+        new_dim = matrix.shape[0]
         shape = list(self.shape[:])
         shape[2] = new_dim
 
@@ -1630,12 +1629,12 @@ class SparseCSR(NDArrayOperatorsMixin):
         # First extract the actual data
         ncol = self.ncol.view()
         if self.finalized:
-            ptr = self.ptr.view()
+            #ptr = self.ptr.view()
             col = self.col.copy()
             D = self._D.copy()
         else:
             idx = array_arange(self.ptr[:-1], n=ncol, dtype=int32)
-            ptr = _ncol_to_indptr(ncol)
+            #ptr = _ncol_to_indptr(ncol)
             col = self.col[idx]
             D = self._D[idx, :].copy()
             del idx
@@ -1762,25 +1761,6 @@ def _get_reduced_shape(shape):
     return tuple(s for s in shape[::-1] if s > 1)[::-1]
 
 
-def _get_bcast_shape(*shapes):
-    """ Calculate the b-casted shape of the results """
-    res_shape = ()
-    for shape in shapes:
-        shape = shape[::-1]
-        if not all((l1 == l2) or (l1 == 1)
-                   for l1, l2 in zip(shape, res_shape)):
-            raise ValueError(f"operands could not be broadcast together "
-                             f"with shapes {shape[::-1]}, {res_shape[::-1]} <- ({shapes})")
-
-        # Create b-cast shape
-        # https://stackoverflow.com/a/47244284/774273
-        res_shape = tuple(max(l1, l2)
-                          for l1, l2 in
-                          zip_longest(shape, res_shape, fillvalue=1))
-
-    return res_shape[::-1]
-
-
 def _ufunc(ufunc, a, b, **kwargs):
     if isinstance(a, (SparseCSR, spmatrix, tuple)):
         if isinstance(b, (SparseCSR, spmatrix, tuple)):
@@ -1880,12 +1860,15 @@ def _ufunc_sp_sp(ufunc, a, b, **kwargs):
         bsl = arange(bsl.start, bsl.stop)
 
         # Common indices
-        idx, aover, bover, iaonly, ibonly = intersect_and_diff_sets(aidx, bidx)
-        out._D[idx, :] = ufunc(adata[asl[aover], :],
-                               bdata[bsl[bover], :], **kwargs)
+        iover, aover, bover, iaonly, ibonly = intersect_and_diff_sets(aidx, bidx)
 
-        # Remaining indices
+        # overlapping indices
+        out._D[iover, :] = ufunc(adata[asl[aover], :],
+                                 bdata[bsl[bover], :], **kwargs)
+
+        # only a
         out._D[aidx[iaonly]] = ufunc(adata[asl[iaonly], :], 0, **kwargs)
+        # only b
         out._D[bidx[ibonly]] = ufunc(0, bdata[bsl[ibonly], :], **kwargs)
 
     return out
@@ -1904,7 +1887,6 @@ def _ufunc_call(ufunc, *in_args, **kwargs):
         elif isinstance(arg, spmatrix):
             args.append(arg)
         else:
-            args = None
             return
 
     if "dtype" not in kwargs:
@@ -1921,7 +1903,7 @@ def _ufunc_call(ufunc, *in_args, **kwargs):
             # but SparseCSR always have 3, so we pad with ones.
             return arg.shape + (1,)
         return arg.shape
-    shape = _get_bcast_shape(*tuple(spshape(arg) for arg in args))
+    #shape = _get_bcast_shape(*tuple(spshape(arg) for arg in args))
 
     if len(args) == 1:
         a = args[0]

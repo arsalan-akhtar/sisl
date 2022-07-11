@@ -672,7 +672,7 @@ class outSileSiesta(SileSiesta):
         return val
 
     @sile_fh_open()
-    def read_scf(self, key="scf", iscf=-1, imd=None, as_dataframe=False):
+    def read_scf(self, key="scf", iscf=-1, imd=None, as_dataframe=False, ret_header=False):
         r""" Parse SCF information and return a table of SCF information depending on what is requested
 
         Parameters
@@ -690,6 +690,9 @@ class outSileSiesta(SileSiesta):
             whether the information should be returned as a `pandas.DataFrame`. The advantage of this
             format is that everything is indexed and therefore you know what each value means.You can also
             perform operations very easily on a dataframe. 
+        ret_header: bool, optional
+            whether to also return the headers that define each value in the returned array,
+            will have no effect if `as_dataframe` is true.
         """
 
         #These are the properties that are written in SIESTA scf
@@ -709,16 +712,49 @@ class outSileSiesta(SileSiesta):
                 d['_final_iscf'] = 0
 
         def common_parse(line, d):
+            nonlocal props
             if line.startswith('ts-Vha:'):
-                d['ts-Vha'] = float(line.split()[1])
+                d['ts-Vha'] = [float(line.split()[1])]
+                if 'ts-Vha' not in props:
+                    d['order'].append("ts-Vha")
+                    props.append("ts-Vha")
+            elif line.startswith("spin moment: S"):
+                # 4.1 and earlier
+                d['S'] = list(map(float, line.split("=")[1].split()[1:]))
+                if 'Sx' not in props:
+                    d['order'].append("S")
+                    props.extend(['Sx', 'Sy', 'Sz'])
+            elif line.startswith("spin moment: {S}"):
+                # 4.2 and later
+                d['S'] = list(map(float, line.split("= {")[1].split()[:3]))
+                if 'Sx' not in props:
+                    d['order'].append("S")
+                    props.extend(['Sx', 'Sy', 'Sz'])
             elif line.startswith('bulk-bias: |v'):
+                # TODO old version should be removed once released
                 d['bb-v'] = list(map(float, line.split()[-3:]))
-                if 'bb-vx' not in props:
+                if 'BB-vx' not in props:
+                    d['order'].append("bb-v")
                     props.extend(['BB-vx', 'BB-vy', 'BB-vz'])
-            elif line.startswith('bulk-bias: {q'):
-                d['bb-q'] = list(map(float, line.split()[-3:]))
-                if 'bb-q+' not in props:
-                    props.extend(['BB-q+', 'BB-q-', 'BB-q0'])
+            elif line.startswith("bulk-bias: {v}"):
+                idx = line.index("{v}")
+                if line[idx + 3] == "_":
+                    # we are in a subset
+                    lbl = f"BB-{line[idx + 4:idx + 6]}"
+                else:
+                    lbl = "BB"
+
+                v = line.split("] {")[1].split()
+                v = list(map(float, v[:3]))
+                d[lbl] = v
+                if f"{lbl}-vx" not in props:
+                    d["order"].append(lbl)
+                    props.extend([f"{lbl}-vx", f"{lbl}-vy", f"{lbl}-vz"])
+            elif line.startswith("bulk-bias: dq"):
+                d['BB-q'] = list(map(float, line.split()[-2:]))
+                if "BB-dq" not in props:
+                    d["order"].append("BB-q")
+                    props.extend(["BB-dq", "BB-q0"])
             else:
                 return False
             return True
@@ -745,10 +781,9 @@ class outSileSiesta(SileSiesta):
                         # Populate DATA by splitting
                         data = line.split()
                         data =  [int(data[1])] + list(map(float, data[2:]))
-                    d['data'] = data
+                    construct_data(d, data)
 
         elif key.lower() == 'ts-scf':
-            props.append("ts-Vha")
             def parse_next(line, d):
                 line = line.strip().replace('*', '0')
                 reset_d(d, line)
@@ -758,34 +793,39 @@ class outSileSiesta(SileSiesta):
                     data = line.split()[1:]
                     try:
                         d['ts-q'] = list(map(float, data))
-                    except:
+                    except Exception:
                         # We are probably reading a device list
                         # ensure that props are appended
                         if data[-1] not in props:
                             props.extend(data)
-                        pass
                 elif line.startswith('ts-scf:'):
                     d['_found_iscf'] = True
                     if len(line) == 100:
                         data = [int(line[8:12]), float(line[12:28]), float(line[28:44]),
                                 float(line[44:60]), float(line[60:70]), float(line[70:80]),
-                                float(line[80:90]), float(line[90:100]), d['ts-Vha']] + d['ts-q']
+                                float(line[80:90]), float(line[90:100])]
                     elif len(line) == 90:
                         data = [int(line[8:12]), float(line[12:28]), float(line[28:44]),
                                 float(line[44:60]), float(line[60:70]), float(line[70:80]),
-                                float(line[80:90]), d['ts-Vha']] + d['ts-q']
+                                float(line[80:90])]
                     else:
                         # Populate DATA by splitting
                         data = line.split()
-                        data = [int(data[1])] + list(map(float, data[2:])) + [d['ts-Vha']] + d['ts-q']
-                    d['data'] = data
+                        data = [int(data[1])] + list(map(float, data[2:]))
+                    construct_data(d, data)
 
         # A temporary dictionary to hold information while reading the output file
         d = {
             '_found_iscf': False,
             '_final_iscf': 0,
             'data': [],
+            'order': [],
         }
+        def construct_data(d, data):
+            for key in d["order"]:
+                data.extend(d[key])
+            d["data"] = data
+
         md = []
         scf = []
         for line in self:
@@ -873,11 +913,13 @@ class outSileSiesta(SileSiesta):
                     df.reset_index("iscf", inplace=True)
                 return df
 
-            if iscf is None:
+            if iscf is not None:
                 # since each MD step may be a different number of SCF steps
-                # we cannot convert to a dense array
-                return md
-            return np.array(md)
+                # we can only convert for a specific entry
+                md = np.array(md)
+            if ret_header:
+                return md, props
+            return md
 
         # correct imd to ensure we check against the final size
         imd = min(len(md) - 1, max(len(md) + imd, 0))
@@ -886,7 +928,10 @@ class outSileSiesta(SileSiesta):
             if as_dataframe:
                 return pd.DataFrame(index=pd.Index([], name="iscf"),
                                     columns=props[1:])
-            return np.array(md[imd])
+            md = np.array(md[imd])
+            if ret_header:
+                return md, props
+            return md
 
         if imd > len(md):
             raise ValueError(f"{self.__class__.__name__}.read_scf could not find requested MD step ({imd}).")
@@ -896,6 +941,8 @@ class outSileSiesta(SileSiesta):
         scf = np.array(md[imd])
         if as_dataframe:
             return MDstep_dataframe(scf)
+        if ret_header:
+            return scf, props
         return scf
 
     @sile_fh_open()
@@ -964,9 +1011,6 @@ class outSileSiesta(SileSiesta):
             if `as_dataframe` is requested. The dataframe will have multi-indices if multiple
             SCF or MD steps are requested.
         """
-        if not hasattr(self, 'fh'):
-            with self:
-                return read_charge(self, name, iscf, imd, key_scf, as_dataframe)
         namel = name.lower()
         if as_dataframe:
             import pandas as pd
@@ -996,7 +1040,7 @@ class outSileSiesta(SileSiesta):
                 # assert that this is a proper line
                 # this should catch cases where the following line of charge output
                 # is still parseable
-                atom_idx = int(atom_idx)
+                #atom_idx = int(atom_idx)
                 return list(map(float, vals))
 
             # first line is the header
@@ -1014,7 +1058,7 @@ class outSileSiesta(SileSiesta):
                     line = self.readline()
                     charge_vals = _parse_charge(line)
                     atom_charges.append(charge_vals)
-                except:
+                except Exception:
                     # We already have the charge values and we reached a line that can't be parsed,
                     # this means we have reached the end.
                     break
@@ -1049,7 +1093,7 @@ class outSileSiesta(SileSiesta):
             _r_charge = _mulliken_charges
             charge_keys = ["mulliken: Atomic and Orbital Populations"]
         else:
-            raise ValueError(f"{self.__class__.__name__}.read_charge name argument should be one of {known_charges}, got {name}?")
+            raise ValueError(f"{self.__class__.__name__}.read_charge name argument should be one of [voronoi, hirshfeld, mulliken], got {name}?")
 
         # Ensure the key_scf matches exactly (prepend a space)
         key_scf = f" {key_scf.strip()}:"
@@ -1161,7 +1205,7 @@ class outSileSiesta(SileSiesta):
             ret = self.step_to(search_keys, case=True, ret_index=True, reread=False)
 
         if not any((FOUND_SCF, FOUND_MD, FOUND_FINAL)):
-            raise SileError(f"{str(self)} does not contain any charges ({name})")
+            raise SileError(f"{self!s} does not contain any charges ({name})")
 
         # if the scf-charges are not stored, it means that the MD step finalization
         # has not been read. So correct
@@ -1194,7 +1238,7 @@ class outSileSiesta(SileSiesta):
                 def get_md_scf_charge(scf_charge, iscf):
                     try:
                         return scf_charge[iscf]
-                    except:
+                    except Exception:
                         return nan_array
             if FOUND_MD:
                 md_charge = np.stack(md_charge)
@@ -1239,15 +1283,15 @@ class outSileSiesta(SileSiesta):
             # we request that user does not request any input
             if (opt_iscf or (not iscf is None)) or \
                (opt_imd or (not imd is None)):
-                raise SileError(f"{str(self)} does not contain MD/SCF charges")
+                raise SileError(f"{self!s} does not contain MD/SCF charges")
 
         elif not FOUND_SCF:
             if opt_iscf or (not iscf is None):
-                raise SileError(f"{str(self)} does not contain SCF charges")
+                raise SileError(f"{self!s} does not contain SCF charges")
 
         elif not FOUND_MD:
             if opt_imd or (not imd is None):
-                raise SileError(f"{str(self)} does not contain MD charges")
+                raise SileError(f"{self!s} does not contain MD charges")
 
         # if either are options they may hold
         if opt_imd and opt_iscf:

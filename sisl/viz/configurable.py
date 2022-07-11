@@ -103,7 +103,7 @@ class NamedHistory:
             try:
                 # If it's an array-like of strings, we will get the full history of each key
                 return {key: np.array(self._vals[key])[self._hist[key]] for key in item}
-            except:
+            except Exception:
                 # Otherwise, we just map the array with __getitem__()
                 return [self.__getitem__(i) for i in item]
         elif isinstance(item, slice):
@@ -146,7 +146,7 @@ class NamedHistory:
                             if val == saved_val:
                                 new_index = i
                                 break
-                        except:
+                        except Exception:
                             # It is possible that the value itself is not a numpy array
                             # but contains one. This is very hard to handle
                             # Also we will assume that any other exception raised mean the
@@ -411,21 +411,22 @@ class ConfigurableMeta(type):
                 if "_parameters" in vars(base):
                     class_params = [*class_params, *deepcopy(base._parameters)]
                 if "_param_groups" in vars(base):
-                    class_param_groups = [*class_param_groups, *deepcopy(base._param_groups)]
+                    class_param_groups = [*deepcopy(base._param_groups), *class_param_groups]
 
-            # Build an extra group for unclassified settings
-            class_param_groups.append({
+            attrs["_parameters"] = class_params
+            attrs["_param_groups"] = [group for group in class_param_groups if group["key"] is not None]
+            attrs["_param_groups"].append({
                 "key": None,
                 "name": "Other settings",
                 "icon": "settings",
                 "description": "Here are some unclassified settings. Even if they don't belong to any group, they might still be important. They may be here just because the developer was too lazy to categorize them or forgot to do so. <b>If you are the developer</b> and it's the first case, <b>shame on you<b>."
             })
 
-            attrs["_parameters"] = class_params
-            attrs["_param_groups"] = class_param_groups
-
+            # If methods have arguments whose keys correspond to settings, they will receive the
+            # current value of the setting as the default. We can not do that if this is a staticmethod
+            # or a classmethod, because they are not aware of the instance.
             for f_name, f in attrs.items():
-                if callable(f) and not f_name.startswith("__"):
+                if callable(f) and (not f_name.startswith("__")) and (not isinstance(f, (staticmethod, classmethod))):
                     attrs[f_name] = _populate_with_settings(f, [param["key"] for param in class_params])
 
         new_cls = super().__new__(cls, name, bases, attrs)
@@ -675,10 +676,6 @@ class Configurable(metaclass=ConfigurableMeta):
 
     def get_param(self, key, as_dict=False, params_extractor=False):
         """ Gets the parameter for a given setting
-
-        By default it returns its dictionary, so that one can check the information that it contains.
-        You can ask for the parameter itself by setting as_dict to False. However, if you want to
-        modify the parameter you should use the modify_param() method instead.
 
         Arguments
         ---------
@@ -948,7 +945,7 @@ def _populate_with_settings(f, class_params):
         # In this case it was just an overhead.
         idx_params = tuple(filter(lambda i_p: i_p[1] in class_params,
                                   enumerate(params)))
-    except:
+    except Exception:
         return f
 
     if len(idx_params) == 0:

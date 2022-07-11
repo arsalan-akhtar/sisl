@@ -3,17 +3,16 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """ This input field is prepared to receive sisl objects that are plotables """
 from pathlib import Path
-from sisl.viz.input_fields.dropdown import DropdownInput
 
 import sisl
+from sisl import BaseSile
 from sisl.physics import distribution
 
 from .._input_field import InputField
-from .queries import QueriesInput
-from .number import FloatInput, IntegerInput
-from .text import FilePathInput, TextInput
+from .basic import FloatInput, IntegerInput, OptionsInput, TextInput, DictInput, BoolInput
 
-from sisl import BaseSile
+from .file import FilePathInput
+from .queries import QueriesInput
 
 if not hasattr(BaseSile, "to_json"):
     # Little patch so that Siles can be sent to the GUI
@@ -88,7 +87,6 @@ class BandStructureInput(QueriesInput, SislObjectInput):
 
             FloatInput(
                 key="x", name="X",
-                width = "s50% m20% l10%",
                 default=0,
                 params={
                     "step": 0.01
@@ -97,7 +95,6 @@ class BandStructureInput(QueriesInput, SislObjectInput):
 
             FloatInput(
                 key="y", name="Y",
-                width = "s50% m20% l10%",
                 default=0,
                 params={
                     "step": 0.01
@@ -106,7 +103,6 @@ class BandStructureInput(QueriesInput, SislObjectInput):
 
             FloatInput(
                 key="z", name="Z",
-                width="s50% m20% l10%",
                 default=0,
                 params={
                     "step": 0.01
@@ -115,7 +111,6 @@ class BandStructureInput(QueriesInput, SislObjectInput):
 
             IntegerInput(
                 key="divisions", name="Divisions",
-                width="s50% m20% l10%",
                 default=50,
                 params={
                     "min": 0,
@@ -125,13 +120,20 @@ class BandStructureInput(QueriesInput, SislObjectInput):
 
             TextInput(
                 key="name", name="Name",
-                width = "s50% m20% l10%",
                 default=None,
                 params = {
                     "placeholder": "Name..."
                 },
                 help = "Tick that should be displayed at this corner of the path."
-            )
+            ),
+
+            BoolInput(
+                key="jump", name="Jump",
+                default=False,
+                help="""If True, this point just signals a discontinuity and the rest
+                of inputs for this point will be ignored.
+                """
+            ),
         ]
 
         super().__init__(*args, **kwargs)
@@ -142,14 +144,28 @@ class BandStructureInput(QueriesInput, SislObjectInput):
             # Use only those points that are active.
             val = [point for point in val if point.get("active", True)]
 
-            val = sisl.BandStructure(
-                None,
-                point=[[
-                        point.get("x", None) or 0, point.get("y", None) or 0, point.get("z", None) or 0
-                    ] for point in val],
-                division=[int(point["divisions"]) for point in val[1:]],
-                name=[point.get("name", '') for point in val]
-            )
+            points = []
+            divisions = []
+            names = []
+            # Loop over all points and construct the inputs for BandStructure
+            for i_point, point in enumerate(val):
+                if point.get("jump") is True:
+                    # This is a discontinuity
+                    points.append(None)
+                    if i_point > 0:
+                        divisions.append(1)
+                else:
+                    # This is an actual point in the band structure.
+                    points.append(
+                        [point.get("x", None) or 0, point.get("y", None) or 0, point.get("z", None) or 0]
+                    )
+                    names.append(point.get("name", ""))
+                    if i_point > 0:
+                        divisions.append(int(point["divisions"]))
+
+            print(points, divisions, names)
+
+            val = sisl.BandStructure(None, points=points, divisions=divisions, names=names)
 
         return val
 
@@ -174,13 +190,13 @@ class PlotableInput(SislObjectInput):
         super().__init__(*args, **kwargs)
 
 
-class DistributionInput(QueriesInput, SislObjectInput):
+class DistributionInput(DictInput, SislObjectInput):
 
     def __init__(self, *args, **kwargs):
         # Let's define the queryform (although we only want one point for now we use QueriesInput for convenience)
-        kwargs["queryForm"] = [
+        kwargs["fields"] = [
 
-            DropdownInput(
+            OptionsInput(
                 key="method", name="Method",
                 default="gaussian",
                 params={
@@ -214,11 +230,7 @@ class DistributionInput(QueriesInput, SislObjectInput):
             if isinstance(val, str):
                 val = distribution.get_distribution(val)
             else:
-                # QueriesInput returns a list of dicts, we only want one.
-                if not isinstance(val, dict):
-                    val = val[0]
-
-                val = distribution.get_distribution(**val)
+                val = distribution.get_distribution(**self.complete_dict(val))
 
         return val
 

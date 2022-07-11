@@ -4,10 +4,9 @@
 from numbers import Integral
 import numpy as np
 from functools import lru_cache
-from os.path import isfile
 
 from .sile import SileCDFSiesta
-from ..sile import add_sile, sile_fh_open, sile_raise_write
+from ..sile import add_sile, sile_raise_write, SileError
 
 from sisl._internal import set_module
 from sisl._array import aranged, array_arange
@@ -22,7 +21,7 @@ from sisl.physics.overlap import Overlap
 from ._help import *
 try:
     from . import _siesta
-except:
+except Exception:
     pass
 
 
@@ -157,7 +156,7 @@ class ncSileSiesta(SileCDFSiesta):
     @lru_cache(maxsize=1)
     def read_force(self):
         """ Returns a vector with final forces contained. """
-        return _a.arrayd(self._value('fa')) * Ry2eV / Bohr2Ang
+        return np.array(self._value('fa')) * Ry2eV / Bohr2Ang
 
     @lru_cache(maxsize=1)
     def read_fermi_level(self):
@@ -391,7 +390,7 @@ class ncSileSiesta(SileCDFSiesta):
             if v.unit == 'Ry':
                 # Convert to ev
                 grid *= Ry2eV
-        except:
+        except Exception:
             # Allowed pass due to pythonic reading
             pass
 

@@ -2,9 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from collections import defaultdict
-import enum
 from sisl.viz.plots.geometry import GeometryPlot
-from sisl.viz.input_fields.dropdown import GeomAxisSelect
 import numpy as np
 from scipy.ndimage import affine_transform
 
@@ -14,9 +12,10 @@ from sisl._supercell import cell_invert
 from sisl import _array as _a
 from ..plot import Plot, entry_point
 from ..input_fields import (
-    TextInput, SileInput, Array1DInput, SwitchInput,
-    ColorPicker, DropdownInput, CreatableDropdown, IntegerInput, FloatInput, RangeInput, RangeSlider,
-    QueriesInput, ProgramaticInput, PlotableInput, SislObjectInput, PlotableInput, SpinSelect
+    TextInput, SileInput, Array1DInput, BoolInput,
+    ColorInput, OptionsInput, CreatableOptionsInput, IntegerInput, FloatInput, RangeInput, RangeSliderInput,
+    QueriesInput, ProgramaticInput, PlotableInput, SislObjectInput, PlotableInput, SpinSelect,
+    GeomAxisSelect
 )
 
 
@@ -55,7 +54,7 @@ class GridPlot(Plot):
         The boundary conditions when a cell transform is applied to the grid.
         Cell transforms are only             applied when the grid's cell
         doesn't follow the cartesian coordinates and the requested display is
-        2D.
+        2D or 1D.
     nsc: array-like, optional
         Number of times the grid should be repeated
     offset: array-like, optional
@@ -89,13 +88,13 @@ class GridPlot(Plot):
         will be represented is of course dependant on the type of
         representation:                 - 2D representations: A contour (i.e.
         a line)                 - 3D representations: A surface
-        Each item is a dict. Structure of the expected dicts:{
-        'name': The name of the iso query. Note that you can use $isoval$ as
-        a template to indicate where the isoval should go.         'val': The
-        iso value. If not provided, it will be infered from `frac`
-        'frac': If val is not provided, this is used to calculate where the
-        isosurface should be drawn.                     It calculates them
-        from the minimum and maximum values of the grid like so:
+        Each item is a dict.    Structure of the dict: {         'name': The
+        name of the iso query. Note that you can use $isoval$ as a template
+        to indicate where the isoval should go.         'val': The iso value.
+        If not provided, it will be infered from `frac`         'frac': If
+        val is not provided, this is used to calculate where the isosurface
+        should be drawn.                     It calculates them from the
+        minimum and maximum values of the grid like so:
         If iso_frac = 0.3:                     (min_value-----
         ISOVALUE(30%)-----------max_value)                     Therefore, it
         should be a number between 0 and 1.
@@ -118,6 +117,8 @@ class GridPlot(Plot):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -132,12 +133,29 @@ class GridPlot(Plot):
         "get_figure": []
     }
 
+    _param_groups = (
+        {
+            "key": "grid_shape",
+            "name": "Grid shape",
+            "icon": "image_aspect_ratio",
+            "description": "Settings related to the shape of the grid, including it's dimensionality and how it is reduced if needed."
+        },
+
+        {
+            "key": "grid_values",
+            "name": "Grid values",
+            "icon": "image",
+            "description": "Settings related to the values of the grid. They involve both how they are processed and displayed"
+        },
+    )
+
     _parameters = (
 
         PlotableInput(
             key="grid", name="Grid",
             dtype=sisl.Grid,
             default=None,
+            group="dataread",
             help="A sisl.Grid object. If provided, grid_file is ignored."
         ),
 
@@ -148,13 +166,13 @@ class GridPlot(Plot):
             params={
                 "placeholder": "Write the path to your grid file here..."
             },
+            group="dataread",
             help="A filename that can be return a Grid through `read_grid`."
         ),
 
-        DropdownInput(
+        OptionsInput(
             key="represent", name="Representation of the grid",
             default="real",
-            width="s100% m50% l90%",
             params={
                 'options': [
                     {'label': 'Real part', 'value': "real"},
@@ -167,13 +185,13 @@ class GridPlot(Plot):
                 'isSearchable': True,
                 'isClearable': False
             },
+            group="grid_values",
             help="""The representation of the grid that should be displayed"""
         ),
 
-        CreatableDropdown(
+        CreatableOptionsInput(
             key="transforms", name="Grid transforms",
             default=[],
-            width="s100% m50% l90%",
             params={
                 'options': [
                     {'label': 'Square', 'value': 'square'},
@@ -183,6 +201,7 @@ class GridPlot(Plot):
                 'isSearchable': True,
                 'isClearable': True
             },
+            group="grid_values",
             help="""Transformations to apply to the whole grid.
             It can be a function, or a string that represents the path
             to a function (e.g. "scipy.exp"). If a string that is a single
@@ -195,14 +214,13 @@ class GridPlot(Plot):
         GeomAxisSelect(
             key = "axes", name="Axes to display",
             default=["z"],
-            width = "s100% m50% l90%",
+            group="grid_shape",
             help = """The axis along you want to see the grid, it will be reduced along the other ones, according to the the `reduce_method` setting."""
         ),
 
-        DropdownInput(
+        OptionsInput(
             key = "zsmooth", name="2D heatmap smoothing method",
             default=False,
-            width = "s100% m50% l90%",
             params={
                 'options': [
                     {'label': 'best', 'value': 'best'},
@@ -212,6 +230,7 @@ class GridPlot(Plot):
                 'isSearchable': True,
                 'isClearable': False
             },
+            group="grid_values",
             help = """Parameter that smoothens how data looks in a heatmap.<br>
             'best' interpolates data, 'fast' interpolates pixels, 'False' displays the data as is."""
         ),
@@ -224,10 +243,11 @@ class GridPlot(Plot):
                 'shape': (3,),
                 'extendable': False,
             },
+            group="grid_shape",
             help="Interpolation factors to make the grid finer on each axis.<br>See the zsmooth setting for faster smoothing of 2D heatmap."
         ),
 
-        DropdownInput(key="transform_bc", name="Transform boundary conditions",
+        CreatableOptionsInput(key="transform_bc", name="Transform boundary conditions",
             default="wrap",
             params={
                 'options': [
@@ -235,6 +255,7 @@ class GridPlot(Plot):
                     {'label': 'wrap', 'value': 'wrap'},
                 ],
             },
+            group="grid_values",
             help="""The boundary conditions when a cell transform is applied to the grid. Cell transforms are only
             applied when the grid's cell doesn't follow the cartesian coordinates and the requested display is 2D or 1D.
             """
@@ -248,6 +269,7 @@ class GridPlot(Plot):
                 'shape': (3,),
                 'extendable': False,
             },
+            group="grid_shape",
             help="Number of times the grid should be repeated"
         ),
 
@@ -271,52 +293,58 @@ class GridPlot(Plot):
             help="""The name that the trace will show in the legend. Good when merging with other plots to be able to toggle the trace in the legend"""
         ),
 
-        RangeSlider(
+        RangeSliderInput(
             key="x_range", name="X range",
             default=None,
             params={
                 "min": 0
             },
+            group="grid_shape",
             help="Range where the X is displayed. Should be inside the unit cell, otherwise it will fail.",
         ),
 
-        RangeSlider(
+        RangeSliderInput(
             key="y_range", name="Y range",
             default=None,
             params={
                 "min": 0
             },
+            group="grid_shape",
             help="Range where the Y is displayed. Should be inside the unit cell, otherwise it will fail.",
         ),
 
-        RangeSlider(
+        RangeSliderInput(
             key="z_range", name="Z range",
             default=None,
             params={
                 "min": 0
             },
+            group="grid_shape",
             help="Range where the Z is displayed. Should be inside the unit cell, otherwise it will fail.",
         ),
 
         RangeInput(
             key="crange", name="Colorbar range",
             default=[None, None],
+            group="grid_values",
             help="The range of values that the colorbar must enclose. This controls saturation and hides below threshold values."
         ),
 
         IntegerInput(
             key="cmid", name="Colorbar center",
             default=None,
+            group="grid_values",
             help="""The value to set at the center of the colorbar. If not provided, the color range is used"""
         ),
 
         TextInput(
             key="colorscale", name="Color scale",
             default=None,
+            group="grid_values",
             help="""A valid plotly colorscale. See https://plotly.com/python/colorscales/"""
         ),
 
-        DropdownInput(key="reduce_method", name="Reduce method",
+        OptionsInput(key="reduce_method", name="Reduce method",
             default="average",
             params={
                 'options': [
@@ -324,11 +352,13 @@ class GridPlot(Plot):
                     {'label': 'sum', 'value': 'sum'},
                 ],
             },
+            group="grid_values",
             help="""The method used to reduce the dimensions that will not be displayed in the plot."""
         ),
 
         QueriesInput(key = "isos", name = "Isosurfaces / contours",
             default = [],
+            group="grid_values",
             help = """The isovalues that you want to represent.
             The way they will be represented is of course dependant on the type of representation:
                 - 2D representations: A contour (i.e. a line)
@@ -339,7 +369,6 @@ class GridPlot(Plot):
                 TextInput(
                     key="name", name="Name",
                     default="Iso=$isoval$",
-                    width="s100% m50% l20%",
                     params={
                         "placeholder": "Name of the isovalue..."
                     },
@@ -378,7 +407,7 @@ class GridPlot(Plot):
                     this setting in mind."""
                 ),
 
-                ColorPicker(
+                ColorInput(
                     key="color", name="Color",
                     default=None,
                     help="The color of the surface/contour."
@@ -398,7 +427,7 @@ class GridPlot(Plot):
             ]
         ),
 
-        SwitchInput(key='plot_geom', name='Plot geometry',
+        BoolInput(key='plot_geom', name='Plot geometry',
             default=False,
             help="""If True the geometry associated to the grid will also be plotted"""
         ),
@@ -417,7 +446,7 @@ class GridPlot(Plot):
 
         self._add_shortcuts()
 
-    @entry_point('grid')
+    @entry_point('grid', 0)
     def _read_nosource(self, grid):
         """
         Reads the grid directly from a sisl grid.
@@ -427,7 +456,7 @@ class GridPlot(Plot):
         if self.grid is None:
             raise ValueError("grid was not set")
 
-    @entry_point('grid file')
+    @entry_point('grid file', 1)
     def _read_grid_file(self, grid_file):
         """
         Reads the grid from any sile that implements `read_grid`.
@@ -468,7 +497,7 @@ class GridPlot(Plot):
         tol: float, optional
             Threshold value to consider a component of the cell nonzero.
         """
-        bigger_than_tol = cell > tol
+        bigger_than_tol = abs(cell) > tol
         return bigger_than_tol.sum() == 3 and bigger_than_tol.any(axis=0).all() and bigger_than_tol.any(axis=1).all()
 
     def _is_1D_cartesian(self, cell, coord_ax, tol=1e-3):
@@ -1235,6 +1264,10 @@ class WavefunctionPlot(GridPlot):
     eigenstate: EigenstateElectron, optional
         The eigenstate that contains the coefficients of the wavefunction.
         Note that an eigenstate can contain coefficients for multiple states.
+    wfsx_file: wfsxSileSiesta, optional
+        Siesta WFSX file to directly read the coefficients from.
+        If the root_fdf file is provided but the wfsx one isn't, we will try
+        to find it             as SystemLabel.WFSX.
     geometry: Geometry, optional
         Necessary to generate the grid and to plot the wavefunctions, since
         the basis orbitals are needed.             If you provide a
@@ -1287,7 +1320,7 @@ class WavefunctionPlot(GridPlot):
         The boundary conditions when a cell transform is applied to the grid.
         Cell transforms are only             applied when the grid's cell
         doesn't follow the cartesian coordinates and the requested display is
-        2D.
+        2D or 1D.
     nsc: array-like, optional
         Number of times the grid should be repeated
     offset: array-like, optional
@@ -1321,13 +1354,13 @@ class WavefunctionPlot(GridPlot):
         will be represented is of course dependant on the type of
         representation:                 - 2D representations: A contour (i.e.
         a line)                 - 3D representations: A surface
-        Each item is a dict. Structure of the expected dicts:{
-        'name': The name of the iso query. Note that you can use $isoval$ as
-        a template to indicate where the isoval should go.         'val': The
-        iso value. If not provided, it will be infered from `frac`
-        'frac': If val is not provided, this is used to calculate where the
-        isosurface should be drawn.                     It calculates them
-        from the minimum and maximum values of the grid like so:
+        Each item is a dict.    Structure of the dict: {         'name': The
+        name of the iso query. Note that you can use $isoval$ as a template
+        to indicate where the isoval should go.         'val': The iso value.
+        If not provided, it will be infered from `frac`         'frac': If
+        val is not provided, this is used to calculate where the isosurface
+        should be drawn.                     It calculates them from the
+        minimum and maximum values of the grid like so:
         If iso_frac = 0.3:                     (min_value-----
         ISOVALUE(30%)-----------max_value)                     Therefore, it
         should be a number between 0 and 1.
@@ -1350,6 +1383,8 @@ class WavefunctionPlot(GridPlot):
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -1364,6 +1399,15 @@ class WavefunctionPlot(GridPlot):
             dtype=sisl.EigenstateElectron,
             help="""The eigenstate that contains the coefficients of the wavefunction.
             Note that an eigenstate can contain coefficients for multiple states.
+            """
+        ),
+
+        SileInput(key='wfsx_file', name='Path to WFSX file',
+            dtype=sisl.io.siesta.wfsxSileSiesta,
+            default=None,
+            help="""Siesta WFSX file to directly read the coefficients from.
+            If the root_fdf file is provided but the wfsx one isn't, we will try to find it
+            as SystemLabel.WFSX.
             """
         ),
 
@@ -1409,7 +1453,7 @@ class WavefunctionPlot(GridPlot):
         'plot_geom': True
     }
 
-    @entry_point('eigenstate')
+    @entry_point('eigenstate', 0)
     def _read_nosource(self, eigenstate):
         """
         Uses an already calculated Eigenstate object to generate the wavefunctions.
@@ -1419,7 +1463,32 @@ class WavefunctionPlot(GridPlot):
 
         self.eigenstate = eigenstate
 
-    @entry_point('hamiltonian')
+    @entry_point('wfsx file', 1)
+    def _read_from_WFSX_file(self, wfsx_file, k, spin, root_fdf):
+        """Reads the wavefunction coefficients from a SIESTA WFSX file"""
+        # Try to read the geometry
+        fdf = self.get_sile(root_fdf or "root_fdf")
+        if fdf is None:
+            raise ValueError("The setting 'root_fdf' needs to point to an fdf file with a geometry")
+        geometry = fdf.read_geometry(output=True)
+
+        # Get the WFSX file. If not provided, it is inferred from the fdf.
+        wfsx = self.get_sile(wfsx_file or "wfsx_file")
+        if not wfsx.file.is_file():
+            raise ValueError(f"File '{wfsx.file}' does not exist.")
+
+        sizes = wfsx.read_sizes()
+        H = sisl.Hamiltonian(geometry, dim=sizes.nspin)
+
+        wfsx = sisl.get_sile(wfsx.file, parent=H)
+
+        # Try to find the eigenstate that we need
+        self.eigenstate = wfsx.read_eigenstate(k=k, spin=spin[0])
+        if self.eigenstate is None:
+            # We have not found it.
+            raise ValueError(f"A state with k={k} was not found in file {wfsx.file}.")
+
+    @entry_point('hamiltonian', 2)
     def _read_from_H(self, k, spin):
         """
         Calculates the eigenstates from a Hamiltonian and then generates the wavefunctions.
@@ -1433,6 +1502,23 @@ class WavefunctionPlot(GridPlot):
         # calling it later in _set_data
         pass
 
+    def _get_eigenstate(self, i):
+
+        if "index" in self.eigenstate.info:
+            wf_i = np.nonzero(self.eigenstate.info["index"] == i)[0]
+            if len(wf_i) == 0:
+                raise ValueError(f"Wavefunction with index {i} is not present in the eigenstate. Available indices: {self.eigenstate.info['index']}."
+                    f"Entry point used: {self.source._name}")
+            wf_i = wf_i[0]
+        else:
+            max_index = len(self.eigenstate)
+            if i > max_index:
+                raise ValueError(f"Wavefunction with index {i} is not present in the eigenstate. Available range: [0, {max_index}]."
+                    f"Entry point used: {self.source._name}")
+            wf_i = i
+
+        return self.eigenstate[wf_i]
+
     def _set_data(self, i, geometry, grid, k, grid_prec, nsc):
 
         if geometry is not None:
@@ -1444,16 +1530,21 @@ class WavefunctionPlot(GridPlot):
         if self.geometry is None:
             raise ValueError('No geometry was provided and we need it the basis orbitals to build the wavefunctions from the coefficients!')
 
+        # Get the spin class for which the eigenstate was calculated.
+        spin = sisl.Spin()
+        if self.eigenstate.parent is not None:
+            spin = getattr(self.eigenstate.parent, "spin", None)
+
+        # Check that number of orbitals match
+        no = self.eigenstate.shape[1] * (1 if spin.is_diagonal else 2)
+        if self.geometry.no != no:
+            raise ValueError(f"Number of orbitals in the state ({no}) and the geometry ({self.geometry.no}) don't match."
+                " This is most likely because the geometry doesn't contain the appropiate basis.")
+
         # Move all atoms inside the unit cell, otherwise the wavefunction is not
         # properly displayed.
         self.geometry = self.geometry.copy()
         self.geometry.xyz = (self.geometry.fxyz % 1).dot(self.geometry.cell)
-
-        # Note that this might be dangerous, as we are modifying the eigenstate, which
-        # could be shared if this is a children of a MultiplePlot. However, we have no
-        # other option because EigenstateElectron.wavefunction doesn't allow providing a
-        # geometry.
-        self.eigenstate.parent = self.geometry
 
         # If we are calculating the wavefunction for any point other than gamma,
         # the periodicity of the WF will be bigger than the cell. Therefore, if
@@ -1467,16 +1558,28 @@ class WavefunctionPlot(GridPlot):
                 tiled_geometry = tiled_geometry.tile(sc_i, ax)
                 nsc[ax] = 1
 
+        is_gamma = (np.array(k) == 0).all()
         if grid is None:
-            dtype = np.float64 if (np.array(k) == 0).all() else np.complex128
+            dtype = np.float64 if is_gamma else np.complex128
             self.grid = sisl.Grid(grid_prec, geometry=tiled_geometry, dtype=dtype)
+            grid = self.grid
 
         # GridPlot's after_read basically sets the x_range, y_range and z_range options
         # which need to know what the grid is, that's why we are calling it here
         super()._after_read()
 
-        self.eigenstate[i].wavefunction(self.grid)
+        # Get the particular WF that we want from the eigenstate object
+        wf_state = self._get_eigenstate(i)
 
-        return super()._set_data(nsc=nsc)
+        # Ensure we are dealing with the R gauge
+        wf_state.change_gauge('R')
+
+        # Finally, insert the wavefunction values into the grid.
+        sisl.physics.electron.wavefunction(
+            wf_state.state, grid, geometry=tiled_geometry,
+            k=k, spinor=0, spin=spin
+        )
+
+        return super()._set_data(nsc=nsc, trace_name=f"WF {i} ({wf_state.eig[0]:.2f} eV)")
 
 GridPlot.backends.register_child(WavefunctionPlot.backends)

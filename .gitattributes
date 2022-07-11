@@ -1,2 +1,3 @@
-# Export hash variable into setup.py
-setup.py export-subst
+CITATION.cff export-subst
+pyproject.toml export-subst
+

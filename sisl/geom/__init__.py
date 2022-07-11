@@ -11,8 +11,17 @@ Bulk
    sc
    bcc
    fcc
+   rocksalt
    hcp
    diamond
+
+
+Surfaces
+========
+
+   fcc_slab
+   bcc_slab
+   rocksalt_slab
 
 
 1D materials
@@ -35,11 +44,9 @@ Bulk
 """
 from .basic import *
 from .flat import *
+from .surfaces import *
 from .nanoribbon import *
 from .nanotube import *
 from .special import *
 from .bilayer import *
 from .category import *
-
-
-__all__ = [s for s in dir() if not s.startswith('_')]

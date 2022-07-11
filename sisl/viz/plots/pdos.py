@@ -1,25 +1,23 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-from sisl.viz.input_fields.sisl_obj import DistributionInput
 import numpy as np
-import os
 
 import sisl
 from sisl.messages import warn
 from ..plot import Plot, entry_point
 from ..plotutils import find_files, random_color
 from ..input_fields import (
-    TextInput, SileInput, SwitchInput, ColorPicker, DropdownInput,
+    TextInput, SileInput, BoolInput, ColorInput, OptionsInput,
     IntegerInput, FloatInput, OrbitalQueries,
-    Array1DInput, GeometryInput
+    Array1DInput, GeometryInput, ErangeInput,
+    DistributionInput
 )
-from ..input_fields.range import ErangeInput
 
 try:
     import pathos
     _do_parallel_calc = True
-except:
+except Exception:
     _do_parallel_calc = False
 
 
@@ -35,12 +33,17 @@ class PdosPlot(Plot):
     tbt_nc: tbtncSileTBtrans, optional
         This parameter explicitly sets a .TBT.nc file. Otherwise, the PDOS
         file is attempted to read from the fdf file
+    wfsx_file: wfsxSileSiesta, optional
+        The WFSX file to get the eigenstates.             In standard SIESTA
+        nomenclature, this should probably be the *.fullBZ.WFSX file, as it
+        is the one             that contains the eigenstates from the full
+        brillouin zone.
     geometry: Geometry or sile (or path to file) that contains a geometry, optional
         If this is passed, the geometry that has been read is ignored and
         this one is used instead.
     Erange: array-like of shape (2,), optional
         Energy range where PDOS is displayed.
-    distribution: array-like of dict, optional
+    distribution: dict, optional
         The distribution used for the smearing of the PDOS if calculated by
         sisl.             It accepts the same types of values as the
         `distribution` argument of `EigenstateElectron.PDOS`.
@@ -48,8 +51,8 @@ class PdosPlot(Plot):
         passed directly             to
         `sisl.physics.distribution.get_distribution`. E.g.: {"method":
         "gaussian",              "smearing": 0.01, "x0": 0.0}
-        Each item is a dict. Structure of the expected dicts:{
-        'method':          'smearing':          'x0':  }
+        Structure of the dict: {         'method':          'smearing':
+        'x0':  }
     nE: int, optional
         If calculating the PDOS from a hamiltonian, the number of energy
         points used
@@ -66,16 +69,22 @@ class PdosPlot(Plot):
     requests: array-like of dict, optional
         Here you can ask for the specific PDOS that you need.
         TIP: Queries can be activated and deactivated.   Each item is a
-        dict. Structure of the expected dicts:{         'name':
-        'species':          'atoms':          'orbitals':          'spin':
-        'normalize':          'color':          'linewidth':          'dash':
-        'split_on':          'scale': The final DOS will be multiplied by
-        this number. }
+        dict.    Structure of the dict: {         'name':          'species':
+        'atoms':    Structure of the dict: {         'index':    Structure of
+        the dict: {         'in':  }         'fx':          'fy':
+        'fz':          'x':          'y':          'z':          'Z':
+        'neighbours':    Structure of the dict: {         'range':
+        'R':          'neigh_tag':  }         'tag':          'seq':  }
+        'orbitals':          'spin':          'normalize':          'color':
+        'linewidth':          'dash':          'split_on':          'scale':
+        The final DOS will be multiplied by this number. }
     root_fdf: fdfSileSiesta, optional
         Path to the fdf file that is the 'parent' of the results.
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -100,7 +109,6 @@ class PdosPlot(Plot):
         SileInput(
             key = "pdos_file", name = "Path to PDOS file",
             dtype=sisl.io.siesta.pdosSileSiesta,
-            width = "s100% m50% l33%",
             group="dataread",
             params = {
                 "placeholder": "Write the path to your PDOS file here...",
@@ -111,12 +119,20 @@ class PdosPlot(Plot):
         SileInput(
             key = "tbt_nc", name = "Path to the TBT.nc file",
             dtype=sisl.io.tbtrans.tbtncSileTBtrans,
-            width = "s100% m50% l33%",
             group="dataread",
             params = {
                 "placeholder": "Write the path to your TBT.nc file here...",
             },
             help = """This parameter explicitly sets a .TBT.nc file. Otherwise, the PDOS file is attempted to read from the fdf file """
+        ),
+
+        SileInput(key='wfsx_file', name='Path to WFSX file',
+            dtype=sisl.io.siesta.wfsxSileSiesta,
+            default=None,
+            help="""The WFSX file to get the eigenstates.
+            In standard SIESTA nomenclature, this should probably be the *.fullBZ.WFSX file, as it is the one
+            that contains the eigenstates from the full brillouin zone.
+            """
         ),
 
         GeometryInput(
@@ -133,7 +149,8 @@ class PdosPlot(Plot):
 
         DistributionInput(
             key="distribution", name="distribution",
-            default=[{"method": "gaussian", "smearing": 0.01, "x0": 0.0}],
+            default={"method": "gaussian", "smearing": 0.01, "x0": 0.0},
+            group="Hparams",
             help="""The distribution used for the smearing of the PDOS if calculated by sisl.
             It accepts the same types of values as the `distribution` argument of `EigenstateElectron.PDOS`. 
             Additionally, it accepts a dictionary containing arguments that are passed directly
@@ -182,7 +199,6 @@ class PdosPlot(Plot):
                 TextInput(
                     key="name", name="Name",
                     default="DOS",
-                    width="s100% m50% l20%",
                     params={
                         "placeholder": "Name of the line..."
                     },
@@ -190,7 +206,7 @@ class PdosPlot(Plot):
 
                 'species', 'atoms', 'orbitals', 'spin',
 
-                SwitchInput(
+                BoolInput(
                     key="normalize", name="Normalize",
                     default=False,
                     params={
@@ -199,7 +215,7 @@ class PdosPlot(Plot):
                     }
                 ),
 
-                ColorPicker(
+                ColorInput(
                     key="color", name="Line color",
                     default=None,
                 ),
@@ -209,7 +225,7 @@ class PdosPlot(Plot):
                     default=1,
                 ),
 
-                DropdownInput(
+                OptionsInput(
                     key="dash", name="Line style",
                     default="solid",
                     params={
@@ -220,7 +236,7 @@ class PdosPlot(Plot):
                     }
                 ),
 
-                DropdownInput(
+                OptionsInput(
                     key="split_on", name="Split",
                     default=None,
                     params={
@@ -289,7 +305,7 @@ class PdosPlot(Plot):
             _description="Split the total DOS along the different spin"
         )
 
-    @entry_point('siesta output')
+    @entry_point('siesta output', 0)
     def _read_siesta_output(self, pdos_file):
         """
         Reads the pdos from a SIESTA .PDOS file.
@@ -297,7 +313,7 @@ class PdosPlot(Plot):
         #Get the info from the .PDOS file
         self.geometry, self.E, self.PDOS = self.get_sile(pdos_file or "pdos_file").read_data()
 
-    @entry_point("TB trans")
+    @entry_point("TB trans", 2)
     def _read_TBtrans(self, root_fdf, tbt_nc):
         """
         Reads the PDOS from a *.TBT.nc file coming from a TBtrans run.
@@ -317,13 +333,55 @@ class PdosPlot(Plot):
         # Read the geometry from the TBT.nc file and get only the device part
         self.geometry = tbt_sile.read_geometry(**read_geometry_kwargs).sub(tbt_sile.a_dev)
 
-    @entry_point('hamiltonian')
+    @entry_point('wfsx file', 3)
+    def _read_from_wfsx(self, root_fdf, wfsx_file, Erange, nE, E0, distribution):
+        """Generates the PDOS values from a file containing eigenstates."""
+        # Read the hamiltonian. We need it because we need the overlap matrix.
+        if not hasattr(self, "H"):
+            self.setup_hamiltonian()
+
+        if self.H is None:
+            raise ValueError("No hamiltonian found, and we need the overlap matrix to calculate the PDOS.")
+
+        # Get the wfsx file
+        wfsx_sile = self.get_sile(wfsx_file or "wfsx_file", parent=self.H)
+
+        # Read the sizes of the file, which contain the number of spin channels
+        # and the number of orbitals and the number of k points.
+        sizes = wfsx_sile.read_sizes()
+        # Check that spin sizes of hamiltonian and wfsx file match
+        assert self.H.spin.size == sizes.nspin, \
+            f"Hamiltonian has spin size {self.H.spin.size} while file has spin size {sizes.nspin}"
+        # Get the size of the spin channel. The size returned might be 8 if it is a spin-orbit
+        # calculation, but we need only 4 spin channels (total, x, y and z), same as with non-colinear
+        nspin = min(4, sizes.nspin)
+
+        # Get the energies for which we need to calculate the PDOS.
+        self.E = np.linspace(Erange[0], Erange[-1], nE) + E0
+
+        # Initialize the PDOS array
+        self.PDOS = np.zeros((nspin, sizes.no_u, self.E.shape[0]), dtype=np.float64)
+
+        # Loop through eigenstates in the WFSX file and add their contribution to the PDOS.
+        # Note that we pass the hamiltonian as the parent here so that the overlap matrix
+        # for each point can be calculated by eigenstate.PDOS()
+        for eigenstate in wfsx_sile.yield_eigenstate():
+            spin = eigenstate.info.get("spin", 0)
+            if nspin == 4:
+                spin = slice(None)
+
+            self.PDOS[spin] += eigenstate.PDOS(self.E, distribution=distribution) * eigenstate.info.get("weight", 1)
+
+    @entry_point('hamiltonian', 4)
     def _read_from_H(self, kgrid, kgrid_displ, Erange, nE, E0, distribution):
         """
         Calculates the PDOS from a sisl Hamiltonian.
         """
         if not hasattr(self, "H"):
             self.setup_hamiltonian()
+
+        if self.H is None:
+            raise ValueError("No hamiltonian found.")
 
         # Get the kgrid or generate a default grid by checking the interaction between cells
         # This should probably take into account how big the cell is.
@@ -335,7 +393,7 @@ class PdosPlot(Plot):
 
         self.E = np.linspace(Erange[0], Erange[-1], nE) + E0
 
-        self.mp = sisl.MonkhorstPack(self.H, kgrid, kgrid_displ)
+        self.bz = sisl.MonkhorstPack(self.H, kgrid, kgrid_displ)
 
         # Define the available spins
         spin_indices = [0]
@@ -345,7 +403,7 @@ class PdosPlot(Plot):
         # Calculate the PDOS for all available spins
         PDOS = []
         for spin in spin_indices:
-            with self.mp.apply(pool=_do_parallel_calc) as parallel:
+            with self.bz.apply(pool=_do_parallel_calc) as parallel:
                 spin_PDOS = parallel.average.eigenstate(
                     spin=spin,
                     wrap=lambda eig: eig.PDOS(self.E, distribution=distribution)

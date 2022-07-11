@@ -7,6 +7,7 @@ import numpy as np
 import scipy as sp
 from os.path import isfile
 import itertools as itools
+import gzip
 
 from ..sile import add_sile, get_sile_class, sile_fh_open, sile_raise_write, SileError
 from .sile import SileSiesta
@@ -21,15 +22,16 @@ from sisl.utils.ranges import list2str
 from sisl.messages import SislError, info, warn
 from sisl.utils.mathematics import fnorm
 
+from .bands import bandsSileSiesta
+from .basis import ionxmlSileSiesta, ionncSileSiesta
 from .binaries import tshsSileSiesta, tsdeSileSiesta
 from .binaries import dmSileSiesta, hsxSileSiesta, onlysSileSiesta
 from .eig import eigSileSiesta
 from .fc import fcSileSiesta
 from .fa import faSileSiesta
+from .orb_indx import orbindxSileSiesta
 from .siesta_grid import gridncSileSiesta
 from .siesta_nc import ncSileSiesta
-from .basis import ionxmlSileSiesta, ionncSileSiesta
-from .orb_indx import orbindxSileSiesta
 from .struct import structSileSiesta
 from .xv import xvSileSiesta
 from sisl import Orbital, SphericalOrbital, Atom, AtomGhost, Atoms
@@ -107,8 +109,11 @@ class fdfSileSiesta(SileSiesta):
         if self.dir_file(f).is_file():
             self._parent_fh.append(self.fh)
             self.fh = self.dir_file(f).open(self._mode)
+        elif self.dir_file(f + ".gz").is_file():
+            self._parent_fh.append(self.fh)
+            self.fh = gzip.open(self.dir_file(f + ".gz"), mode="rt")
         else:
-            warn(str(self) + f' is trying to include file: {f} but the file seems not to exist? Will disregard file!')
+            warn(f"{self!s} is trying to include file: {f} but the file seems not to exist? Will disregard file!")
 
     def _popfile(self):
         if len(self._parent_fh) > 0:
@@ -123,7 +128,7 @@ class fdfSileSiesta(SileSiesta):
             while self._popfile():
                 pass
             self.fh.seek(0)
-        except:
+        except Exception:
             pass
 
     @sile_fh_open()
@@ -287,7 +292,7 @@ class fdfSileSiesta(SileSiesta):
                     # a real number (otherwise an integer)
                     return 'r'
                 return 'i'
-            except:
+            except Exception:
                 pass
             # fall-back to name with everything
 
@@ -296,7 +301,7 @@ class fdfSileSiesta(SileSiesta):
             try:
                 float(values[0])
                 return 'p'
-            except:
+            except Exception:
                 pass
 
         return 'n'
@@ -424,7 +429,7 @@ class fdfSileSiesta(SileSiesta):
                 self.get(key)
                 # Get the file of the containing data
                 top_file = str(self.fh.name)
-            except:
+            except Exception:
                 pass
 
         # Ensure that all files are closed
@@ -584,53 +589,12 @@ class fdfSileSiesta(SileSiesta):
             if n in geometry.names:
                 idx = list2str(geometry.names[n] + 1).replace('-', ' -- ')
                 if len(idx) > 200:
-                    info(f"{str(self)}.write_geometry will not write the constraints for {n} (too long line).")
+                    info(f"{self!s}.write_geometry will not write the constraints for {n} (too long line).")
                 else:
                     _write_block = write_block(idx, append, _write_block)
 
         if not _write_block:
             self._write('%endblock\n')
-
-    @staticmethod
-    def _SpGeom_replace_geom(spgeom, geometry):
-        """ Replace all atoms in spgeom with the atom in geometry while retaining the number of orbitals
-
-        Currently we need some way of figuring out whether the number of atoms and orbitals are
-        consistent.
-
-        Parameters
-        ----------
-        spgeom : SparseGeometry
-           the sparse object with attached geometry
-        geometry : Geometry
-           geometry to grab atoms from
-        full_replace : bool, optional
-           whether the full geometry may be replaced in case ``spgeom.na != geometry.na && spgeom.no == geometry.no``.
-           This is required when `spgeom` does not contain information about atoms.
-        """
-        if spgeom.na != geometry.na and spgeom.no == geometry.no:
-            # In this case we cannot compare individiual atoms # of orbitals.
-            # I.e. we suspect the incoming geometry to be correct.
-            spgeom._geometry = geometry
-            return True
-
-        elif spgeom.na != geometry.na:
-            warn('cannot replace geometry due to insufficient information regarding number of '
-                 'atoms and orbitals, ensuring correct geometry failed...')
-
-        no_no = spgeom.no == geometry.no
-        # Loop and make sure the number of orbitals is consistent
-        for a, idx in geometry.atoms.iter(True):
-            if len(idx) == 0:
-                continue
-            Sa = spgeom.geometry.atoms[idx[0]]
-            if Sa.no != a.no:
-                # Make sure the atom we replace with retains the same information
-                # *except* the number of orbitals.
-                a = a.__class__(a.Z, Sa.orbital, mass=a.mass, tag=a.tag)
-            spgeom.geometry.atoms.replace(idx, a)
-            spgeom.geometry.reduce()
-        return no_no
 
     def read_supercell_nsc(self, *args, **kwargs):
         """ Read supercell size using any method available
@@ -640,25 +604,25 @@ class fdfSileSiesta(SileSiesta):
         SislWarning
             if none of the files can be read
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'ORB_INDX']))
+        order = _listify_str(kwargs.pop("order", ["nc", "ORB_INDX"]))
         for f in order:
-            v = getattr(self, '_r_supercell_nsc_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_supercell_nsc_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 _track(self.read_supercell_nsc, f"found file {f}")
                 return v
-        warn('number of supercells could not be read from output files. Assuming molecule cell '
-             '(no supercell connections)')
+        warn("number of supercells could not be read from output files. Assuming molecule cell "
+             "(no supercell connections)")
         return _a.onesi(3)
 
     def _r_supercell_nsc_nc(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_supercell_nsc_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_supercell_nsc()
         return None
 
     def _r_supercell_nsc_orb_indx(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.ORB_INDX')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".ORB_INDX")
         _track_file(self._r_supercell_nsc_orb_indx, f)
         if f.is_file():
             return orbindxSileSiesta(f).read_supercell_nsc()
@@ -677,23 +641,23 @@ class fdfSileSiesta(SileSiesta):
             the fdf file).
         order: list of str, optional
             the order of which to try and read the supercell.
-            By default this is ``['XV', 'nc', 'fdf']`` if `output` is true.
+            By default this is ``["XV", "nc", "fdf"]`` if `output` is true.
             If `order` is present `output` is disregarded.
 
         Examples
         --------
-        >>> fdf = get_sile('RUN.fdf')
+        >>> fdf = get_sile("RUN.fdf")
         >>> fdf.read_supercell() # read from fdf
         >>> fdf.read_supercell(True) # read from [XV, nc, fdf]
-        >>> fdf.read_supercell(order=['nc']) # read from [nc]
-        >>> fdf.read_supercell(True, order=['nc']) # read from [nc]
+        >>> fdf.read_supercell(order=["nc"]) # read from [nc]
+        >>> fdf.read_supercell(True, order=["nc"]) # read from [nc]
         """
         if output:
-            order = _listify_str(kwargs.pop('order', ['XV', 'nc', 'fdf']))
+            order = _listify_str(kwargs.pop("order", ["XV", "nc", "fdf"]))
         else:
-            order = _listify_str(kwargs.pop('order', ['fdf']))
+            order = _listify_str(kwargs.pop("order", ["fdf"]))
         for f in order:
-            v = getattr(self, '_r_supercell_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_supercell_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 _track(self.read_supercell, f"found file {f}")
                 return v
@@ -701,25 +665,25 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_supercell_fdf(self, *args, **kwargs):
         """ Returns `SuperCell` object from the FDF file """
-        s = self.get('LatticeConstant', unit='Ang')
+        s = self.get("LatticeConstant", unit="Ang")
         if s is None:
-            raise SileError('Could not find LatticeConstant in file')
+            raise SileError("Could not find LatticeConstant in file")
 
         # Read in cell
         cell = _a.emptyd([3, 3])
 
-        lc = self.get('LatticeVectors')
+        lc = self.get("LatticeVectors")
         if lc:
             for i in range(3):
                 cell[i, :] = [float(k) for k in lc[i].split()[:3]]
         else:
-            lc = self.get('LatticeParameters')
+            lc = self.get("LatticeParameters")
             if lc:
                 tmp = [float(k) for k in lc[0].split()[:6]]
                 cell = SuperCell.tocell(*tmp)
         if lc is None:
             # the fdf file contains neither the latticevectors or parameters
-            raise SileError('Could not find LatticeVectors or LatticeParameters block in file')
+            raise SileError("Could not find LatticeVectors or LatticeParameters block in file")
         cell *= s
 
         # When reading from the fdf, the warning should be suppressed
@@ -731,7 +695,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_supercell_nc(self):
         # Read supercell from <>.nc file
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_supercell_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_supercell()
@@ -739,7 +703,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_supercell_xv(self, *args, **kwargs):
         """ Returns `SuperCell` object from the XV file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.XV')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".XV")
         _track_file(self._r_supercell_xv, f)
         if f.is_file():
             nsc = self.read_supercell_nsc()
@@ -751,8 +715,8 @@ class fdfSileSiesta(SileSiesta):
     def _r_supercell_struct(self, *args, **kwargs):
         """ Returns `SuperCell` object from the STRUCT files """
         sc = None
-        for end in ['STRUCT_NEXT_ITER', 'STRUCT_OUT', 'STRUCT_IN']:
-            f = self.dir_file(self.get('SystemLabel', default='siesta') + f'.{end}')
+        for end in ["STRUCT_NEXT_ITER", "STRUCT_OUT", "STRUCT_IN"]:
+            f = self.dir_file(self.get("SystemLabel", default="siesta") + f".{end}")
             _track_file(self._r_supercell_struct, f)
             if f.is_file():
                 nsc = self.read_supercell_nsc()
@@ -762,14 +726,14 @@ class fdfSileSiesta(SileSiesta):
         return sc
 
     def _r_supercell_tshs(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSHS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSHS")
         _track_file(self._r_supercell_tshs, f)
         if f.is_file():
             return tshsSileSiesta(f).read_supercell()
         return None
 
     def _r_supercell_onlys(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.onlyS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".onlyS")
         _track_file(self._r_supercell_onlys, f)
         if f.is_file():
             return onlysSileSiesta(f).read_supercell()
@@ -781,15 +745,15 @@ class fdfSileSiesta(SileSiesta):
         Parameters
         ----------
         order : list of str, optional
-           the order of the forces we are trying to read, default to ``['FA', 'nc']``
+           the order of the forces we are trying to read, default to ``["FA", "nc"]``
 
         Returns
         -------
         numpy.ndarray : vector with forces for each of the atoms, along each Cartesian direction
         """
-        order = _listify_str(kwargs.pop('order', ['FA', 'nc']))
+        order = _listify_str(kwargs.pop("order", ["FA", "nc"]))
         for f in order:
-            v = getattr(self, '_r_force_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_force_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_force) found in file={f}")
@@ -798,7 +762,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_force_fa(self, *args, **kwargs):
         """ Read forces from the FA file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.FA')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".FA")
         _track_file(self._r_force_fa, f)
         if f.is_file():
             return faSileSiesta(f).read_force()
@@ -806,7 +770,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_force_fac(self, *args, **kwargs):
         """ Read forces from the FAC file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.FAC')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".FAC")
         _track_file(self._r_force_fac, f)
         if f.is_file():
             return faSileSiesta(f).read_force()
@@ -814,7 +778,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_force_tsfa(self, *args, **kwargs):
         """ Read forces from the TSFA file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSFA')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSFA")
         _track_file(self._r_force_tsfa, f)
         if f.is_file():
             return faSileSiesta(f).read_force()
@@ -822,7 +786,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_force_tsfac(self, *args, **kwargs):
         """ Read forces from the TSFAC file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSFAC')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSFAC")
         _track_file(self._r_force_tsfac, f)
         if f.is_file():
             return faSileSiesta(f).read_force()
@@ -830,7 +794,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_force_nc(self, *args, **kwargs):
         """ Read forces from the nc file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_force_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_force()
@@ -844,9 +808,9 @@ class fdfSileSiesta(SileSiesta):
         force_constant : numpy.ndarray
             vector ``[*, 3, 2, *, 3]``  with force constant element for each of the atomic displacements
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'FC']))
+        order = _listify_str(kwargs.pop("order", ["nc", "FC"]))
         for f in order:
-            v = getattr(self, '_r_force_constant_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_force_constant_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_force_constant) found in file={f}")
@@ -854,20 +818,20 @@ class fdfSileSiesta(SileSiesta):
         return None
 
     def _r_force_constant_nc(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_force_constant_nc, f)
         if f.is_file():
-            if not 'FC' in ncSileSiesta(f).groups:
+            if not "FC" in ncSileSiesta(f).groups:
                 return None
             fc = ncSileSiesta(f).read_force_constant()
             return fc
         return None
 
     def _r_force_constant_fc(self, *args, **kwargs):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.FC')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".FC")
         _track_file(self._r_force_constant_fc, f)
         if f.is_file():
-            na = self.get('NumberOfAtoms', default=None)
+            na = self.get("NumberOfAtoms", default=None)
             return fcSileSiesta(f).read_force_constant(na=na)
         return None
 
@@ -878,16 +842,16 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the fermi-level.
-            By default this is ``['nc', 'TSDE', 'TSHS', 'EIG']``.
+            By default this is ``["nc", "TSDE", "TSHS", "EIG", "bands"]``.
 
         Returns
         -------
         Ef : float
             fermi-level
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'TSDE', 'TSHS', 'EIG']))
+        order = _listify_str(kwargs.pop("order", ["nc", "TSDE", "TSHS", "EIG", "bands"]))
         for f in order:
-            v = getattr(self, '_r_fermi_level_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_fermi_level_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_fermi_level) found in file={f}")
@@ -895,31 +859,38 @@ class fdfSileSiesta(SileSiesta):
         return None
 
     def _r_fermi_level_nc(self):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_fermi_level_nc, f)
         if isfile(f):
             return ncSileSiesta(f).read_fermi_level()
         return None
 
     def _r_fermi_level_tsde(self):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSDE')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSDE")
         _track_file(self._r_fermi_level_tsde, f)
         if isfile(f):
             return tsdeSileSiesta(f).read_fermi_level()
         return None
 
     def _r_fermi_level_tshs(self):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSHS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSHS")
         _track_file(self._r_fermi_level_tshs, f)
         if isfile(f):
             return tshsSileSiesta(f).read_fermi_level()
         return None
 
     def _r_fermi_level_eig(self):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.EIG')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".EIG")
         _track_file(self._r_fermi_level_eig, f)
         if isfile(f):
             return eigSileSiesta(f).read_fermi_level()
+        return None
+
+    def _r_fermi_level_bands(self):
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".bands")
+        _track_file(self._r_fermi_level_bands, f)
+        if isfile(f):
+            return bandsSileSiesta(f).read_fermi_level()
         return None
 
     def read_dynamical_matrix(self, *args, **kwargs):
@@ -929,13 +900,13 @@ class fdfSileSiesta(SileSiesta):
         but for dynamical matrices it makes sense to let the user control this,
         e.g. through the fdf file.
         By default the mass will be read from the AtomicMass key in the fdf file
-        and _not_ from the basis set information.
+        and *not* from the basis set information.
 
         Parameters
         ----------
         order: list of str, optional
             the order of which to try and read the dynamical matrix.
-            By default this is ``['nc', 'FC']``.
+            By default this is ``["nc", "FC"]``.
         cutoff_dist : float, optional
             cutoff value for the distance of the force-constants (everything farther than
             `cutoff_dist` will be set to 0 Ang). Default, no cutoff.
@@ -960,9 +931,9 @@ class fdfSileSiesta(SileSiesta):
         dynamic_matrix : DynamicalMatrix
             the dynamical matrix
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'FC']))
+        order = _listify_str(kwargs.pop("order", ["nc", "FC"]))
         for f in order:
-            v = getattr(self, '_r_dynamical_matrix_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_dynamical_matrix_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_dynamical_matrix) found in file={f}")
@@ -975,20 +946,24 @@ class fdfSileSiesta(SileSiesta):
         if FC is None:
             return None
         geom = self.read_geometry()
+        # The dynamical_matrix_from_fc should correctly specify the supercell
+        geom.set_nsc([1, 1, 1])
 
         basis_fdf = self.read_basis(order="fdf")
         for i, atom in enumerate(basis_fdf):
             geom.atoms.replace(i, atom)
 
         # Get list of FC atoms
-        FC_atoms = _a.arangei(self.get('MD.FCFirst', default=1) - 1, self.get('MD.FCLast', default=geom.na))
+        FC_atoms = _a.arangei(self.get("MD.FCFirst", default=1) - 1, self.get("MD.FCLast", default=geom.na))
         return self._dynamical_matrix_from_fc(geom, FC, FC_atoms, *args, **kwargs)
 
     def _r_dynamical_matrix_nc(self, *args, **kwargs):
-        FC = self.read_force_constant(*args, order=['nc'], **kwargs)
+        FC = self.read_force_constant(*args, order=["nc"], **kwargs)
         if FC is None:
             return None
-        geom = self.read_geometry(order=['nc'])
+        geom = self.read_geometry(order=["nc"])
+        # The dynamical_matrix_from_fc should correctly specify the supercell
+        geom.set_nsc([1, 1, 1])
 
         basis_fdf = self.read_basis(order="fdf")
         for i, atom in enumerate(basis_fdf):
@@ -996,7 +971,7 @@ class fdfSileSiesta(SileSiesta):
 
         # Get list of FC atoms
         # TODO change to read in from the NetCDF file
-        FC_atoms = _a.arangei(self.get('MD.FCFirst', default=1) - 1, self.get('MD.FCLast', default=geom.na))
+        FC_atoms = _a.arangei(self.get("MD.FCFirst", default=1) - 1, self.get("MD.FCLast", default=geom.na))
         return self._dynamical_matrix_from_fc(geom, FC, FC_atoms, *args, **kwargs)
 
     def _dynamical_matrix_from_fc(self, geom, FC, FC_atoms, *args, **kwargs):
@@ -1010,22 +985,22 @@ class fdfSileSiesta(SileSiesta):
         hermitian = kwargs.get("hermitian", True)
 
         # Figure out the "original" periodic directions
-        periodic = geom.nsc > 1
+        #periodic = geom.nsc > 1
 
         # Create conversion from eV/Ang^2 to correct units
         # Further down we are multiplying with [1 / amu]
-        scale = constant.hbar / units('Ang', 'm') / units('eV amu', 'J kg') ** 0.5
+        scale = constant.hbar / units("Ang", "m") / units("eV amu", "J kg") ** 0.5
 
         # Cut-off too small values
-        fc_cut = kwargs.get('cutoff', 0.)
+        fc_cut = kwargs.get("cutoff", 0.)
         FC = np.where(np.fabs(FC) > fc_cut, FC, 0.)
 
         # Convert the force constant such that a diagonalization returns eV ^ 2
         # FC is in [eV / Ang^2]
 
         # Convert the geometry to contain 3 orbitals per atom (x, y, z)
-        R = kwargs.get('cutoff_dist', -2.)
-        orbs = [Orbital(R / 2, tag=tag) for tag in 'xyz']
+        R = kwargs.get("cutoff_dist", -2.)
+        orbs = [Orbital(R / 2, tag=tag) for tag in "xyz"]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             for atom, _ in geom.atoms.iter(True):
@@ -1035,7 +1010,7 @@ class fdfSileSiesta(SileSiesta):
         # Figure out the supercell indices
         # if the displaced atoms equals the length of the geometry
         # it means we are not using a supercell.
-        supercell = kwargs.get('supercell', len(geom) != len(FC_atoms))
+        supercell = kwargs.get("supercell", len(geom) != len(FC_atoms))
         if supercell is False:
             supercell = [1] * 3
         elif supercell is True:
@@ -1110,7 +1085,7 @@ class fdfSileSiesta(SileSiesta):
             for ax in range(3):
                 daxis = geom_tile.xyz[:, ax] - geom.xyz[:, ax]
                 if not np.allclose(daxis, daxis[0], rtol=0., atol=0.01):
-                    raise SislError(f"{str(self)}.read_dynamical_matrix(FC) could "
+                    raise SislError(f"{self!s}.read_dynamical_matrix(FC) could "
                                     "not figure out the tiling method for the supercell")
 
             # Convert the FC matrix to a "rollable" matrix
@@ -1157,14 +1132,13 @@ class fdfSileSiesta(SileSiesta):
         # TODO check if ghost-atoms should be taken into account in _fc_correct
         idx = (geom.atoms.mass == 0.).nonzero()[0]
         if len(idx) > 0:
-            FC = np.delete(FC, idx, axis=5)
-            geom = geom.remove(idx)
-            geom.set_nsc([1] * 3)
+            #FC = np.delete(FC, idx, axis=5)
+            #geom = geom.remove(idx)
+            #geom.set_nsc([1] * 3)
             raise NotImplementedError(f"{self}.read_dynamical_matrix could not reduce geometry "
                                       "since there are atoms with 0 mass.")
 
         # Now we can build the dynamical matrix (it will always be real)
-        na = len(geom)
 
         if np.all(supercell <= 1):
             # also catches supercell == 0
@@ -1284,16 +1258,16 @@ class fdfSileSiesta(SileSiesta):
             the fdf file).
         order: list of str, optional
             the order of which to try and read the geometry.
-            By default this is ``['XV', 'nc', 'fdf', 'TSHS', 'STRUCT']`` if `output` is true
+            By default this is ``["XV", "nc", "fdf", "TSHS", "HSX", "STRUCT"]`` if `output` is true
             If `order` is present `output` is disregarded.
 
         Examples
         --------
-        >>> fdf = get_sile('RUN.fdf')
+        >>> fdf = get_sile("RUN.fdf")
         >>> fdf.read_geometry() # read from fdf
         >>> fdf.read_geometry(True) # read from [XV, nc, fdf]
-        >>> fdf.read_geometry(order=['nc']) # read from [nc]
-        >>> fdf.read_geometry(True, order=['nc']) # read from [nc]
+        >>> fdf.read_geometry(order=["nc"]) # read from [nc]
+        >>> fdf.read_geometry(True, order=["nc"]) # read from [nc]
         """
         ##
         # NOTE
@@ -1301,11 +1275,11 @@ class fdfSileSiesta(SileSiesta):
         # code to correct.
         ##
         if output:
-            order = _listify_str(kwargs.pop('order', ['XV', 'nc', 'fdf', 'TSHS', 'STRUCT']))
+            order = _listify_str(kwargs.pop("order", ["XV", "nc", "fdf", "TSHS", "HSX", "STRUCT"]))
         else:
-            order = _listify_str(kwargs.pop('order', ['fdf']))
+            order = _listify_str(kwargs.pop("order", ["fdf"]))
         for f in order:
-            v = getattr(self, '_r_geometry_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_geometry_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_geometry) found in file={f}")
@@ -1315,7 +1289,7 @@ class fdfSileSiesta(SileSiesta):
     def _r_geometry_xv(self, *args, **kwargs):
         """ Returns `Geometry` object from the XV file """
         geom = None
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.XV')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".XV")
         _track_file(self._r_geometry_xv, f)
         if f.is_file():
             basis = self.read_basis()
@@ -1324,7 +1298,7 @@ class fdfSileSiesta(SileSiesta):
             else:
                 geom = xvSileSiesta(f).read_geometry(species_Z=True)
                 with warnings.catch_warnings():
-                    warnings.simplefilter('ignore')
+                    warnings.simplefilter("ignore")
                     for atom, _ in geom.atoms.iter(True):
                         geom.atoms.replace(atom, basis[atom.Z-1])
                     geom.reduce()
@@ -1335,8 +1309,8 @@ class fdfSileSiesta(SileSiesta):
     def _r_geometry_struct(self, *args, **kwargs):
         """ Returns `Geometry` object from the STRUCT_* files """
         geom = None
-        for end in ['STRUCT_NEXT_ITER', 'STRUCT_OUT', 'STRUCT_IN']:
-            f = self.dir_file(self.get('SystemLabel', default='siesta') + f'.{end}')
+        for end in ["STRUCT_NEXT_ITER", "STRUCT_OUT", "STRUCT_IN"]:
+            f = self.dir_file(self.get("SystemLabel", default="siesta") + f".{end}")
             _track_file(self._r_geometry_struct, f)
             if f.is_file():
                 basis = self.read_basis()
@@ -1345,7 +1319,7 @@ class fdfSileSiesta(SileSiesta):
                 else:
                     geom = structSileSiesta(f).read_geometry(species_Z=True)
                     with warnings.catch_warnings():
-                        warnings.simplefilter('ignore')
+                        warnings.simplefilter("ignore")
                         for atom, _ in geom.atoms.iter(True):
                             geom.atoms.replace(atom, basis[atom.Z-1])
                         geom.reduce()
@@ -1356,7 +1330,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_geometry_nc(self):
         # Read geometry from <>.nc file
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_geometry_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_geometry()
@@ -1364,11 +1338,20 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_geometry_tshs(self):
         # Read geometry from <>.TSHS file
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSHS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSHS")
         _track_file(self._r_geometry_tshs, f)
         if f.is_file():
             # Default to a geometry with the correct atomic numbers etc.
             return tshsSileSiesta(f).read_geometry(geometry=self.read_geometry(False))
+        return None
+
+    def _r_geometry_hsx(self):
+        # Read geometry from <>.TSHS file
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".HSX")
+        _track_file(self._r_geometry_hsx, f)
+        if f.is_file():
+            # Default to a geometry with the correct atomic numbers etc.
+            return hsxSileSiesta(f).read_geometry(geometry=self.read_geometry(False))
         return None
 
     def _r_geometry_fdf(self, *args, **kwargs):
@@ -1376,21 +1359,21 @@ class fdfSileSiesta(SileSiesta):
 
         NOTE: Interaction range of the Atoms are currently not read.
         """
-        sc = self.read_supercell(order='fdf')
+        sc = self.read_supercell(order="fdf")
 
         # No fractional coordinates
         is_frac = False
 
         # Read atom scaling
-        lc = self.get('AtomicCoordinatesFormat', default='Bohr').lower()
-        if 'ang' in lc or 'notscaledcartesianang' in lc:
+        lc = self.get("AtomicCoordinatesFormat", default="Bohr").lower()
+        if "ang" in lc or "notscaledcartesianang" in lc:
             s = 1.
-        elif 'bohr' in lc or 'notscaledcartesianbohr' in lc:
+        elif "bohr" in lc or "notscaledcartesianbohr" in lc:
             s = Bohr2Ang
-        elif 'scaledcartesian' in lc:
+        elif "scaledcartesian" in lc:
             # the same scaling as the lattice-vectors
-            s = self.get('LatticeConstant', unit='Ang')
-        elif 'fractional' in lc or 'scaledbylatticevectors' in lc:
+            s = self.get("LatticeConstant", unit="Ang")
+        elif "fractional" in lc or "scaledbylatticevectors" in lc:
             # no scaling of coordinates as that is entirely
             # done by the latticevectors
             s = 1.
@@ -1399,9 +1382,9 @@ class fdfSileSiesta(SileSiesta):
         # If the user requests a shifted geometry
         # we correct for this
         origin = _a.zerosd([3])
-        lor = self.get('AtomicCoordinatesOrigin')
+        lor = self.get("AtomicCoordinatesOrigin")
         if lor:
-            if kwargs.get('origin', True):
+            if kwargs.get("origin", True):
                 if isinstance(lor, str):
                     origin = lor.lower()
                 else:
@@ -1410,23 +1393,23 @@ class fdfSileSiesta(SileSiesta):
         # hence, it is not transformed.
 
         # Read atom block
-        atms = self.get('AtomicCoordinatesAndAtomicSpecies')
+        atms = self.get("AtomicCoordinatesAndAtomicSpecies")
         if atms is None:
-            raise SileError('AtomicCoordinatesAndAtomicSpecies block could not be found')
+            raise SileError("AtomicCoordinatesAndAtomicSpecies block could not be found")
 
         # Read number of atoms and block
         # We default to the number of elements in the
         # AtomicCoordinatesAndAtomicSpecies block
-        na = self.get('NumberOfAtoms', default=len(atms))
+        na = self.get("NumberOfAtoms", default=len(atms))
 
         # Reduce space if number of atoms specified
         if na < len(atms):
             # align number of atoms and atms array
             atms = atms[:na]
         elif na > len(atms):
-            raise SileError('NumberOfAtoms is larger than the atoms defined in the blocks')
+            raise SileError("NumberOfAtoms is larger than the atoms defined in the blocks")
         elif na == 0:
-            raise SileError('NumberOfAtoms has been determined to be zero, no atoms.')
+            raise SileError("NumberOfAtoms has been determined to be zero, no atoms.")
 
         # Create array
         xyz = _a.emptyd([na, 3])
@@ -1442,7 +1425,7 @@ class fdfSileSiesta(SileSiesta):
         # Read the block (not strictly needed, if so we simply set all atoms to H)
         atoms = self.read_basis()
         if atoms is None:
-            warn('Block ChemicalSpeciesLabel does not exist, cannot determine the basis (all Hydrogen).')
+            warn("Block ChemicalSpeciesLabel does not exist, cannot determine the basis (all Hydrogen).")
 
             # Default atom (hydrogen)
             atoms = Atom(1)
@@ -1452,28 +1435,28 @@ class fdfSileSiesta(SileSiesta):
 
         if isinstance(origin, str):
             opt = origin
-            if opt.startswith('cop'):
+            if opt.startswith("cop"):
                 origin = sc.cell.sum(0) * 0.5 - np.average(xyz, 0)
-            elif opt.startswith('com'):
+            elif opt.startswith("com"):
                 # TODO for ghost atoms its mass should not be used
-                w = atom.mass
+                w = atoms.mass
                 w /= w.sum()
                 origin = sc.cell.sum(0) * 0.5 - np.average(xyz, 0, weights=w)
-            elif opt.startswith('min'):
+            elif opt.startswith("min"):
                 origin = - np.amin(xyz, 0)
             if len(opt) > 4:
                 opt = opt[4:]
-                if opt == 'x':
+                if opt == "x":
                     origin[1:] = 0.
-                elif opt == 'y':
+                elif opt == "y":
                     origin[[0, 2]] = 0.
-                elif opt == 'z':
+                elif opt == "z":
                     origin[:2] = 0.
-                elif opt == 'xy' or opt == 'yx':
+                elif opt in ("xy", "yx"):
                     origin[2] = 0.
-                elif opt == 'xz' or opt == 'zx':
+                elif opt in ("xz", "zx"):
                     origin[1] = 0.
-                elif opt == 'yz' or opt == 'zy':
+                elif opt in ("yz", "zy"):
                     origin[0] = 0.
 
         # create geometry
@@ -1481,7 +1464,7 @@ class fdfSileSiesta(SileSiesta):
         geom = Geometry(xyz, atoms, sc=sc)
 
         # and finally check for supercell constructs
-        supercell = self.get('SuperCell')
+        supercell = self.get("SuperCell")
         if supercell is not None:
             # we need to expand
             # check that we are only dealing with an orthogonal supercell
@@ -1493,7 +1476,7 @@ class fdfSileSiesta(SileSiesta):
             diag = np.diag(supercell)
 
             if not np.allclose(supercell - np.diag(diag), 0):
-                raise SileError('SuperCell input is not diagonal, currently not implemented in sisl')
+                raise SileError("SuperCell input is not diagonal, currently not implemented in sisl")
 
             # now tile it
             for axis, nt in enumerate(diag):
@@ -1517,11 +1500,11 @@ class fdfSileSiesta(SileSiesta):
             case insensitive.
         order: list of str, optional
             the order of which to try and read the geometry.
-            By default this is ``['nc', 'grid.nc', 'bin']`` (bin refers to the binary files)
+            By default this is ``["nc", "grid.nc", "bin"]`` (bin refers to the binary files)
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'grid.nc', 'bin']))
+        order = _listify_str(kwargs.pop("order", ["nc", "grid.nc", "bin"]))
         for f in order:
-            v = getattr(self, '_r_grid_{}'.format(f.lower().replace('.', '_')))(name, *args, **kwargs)
+            v = getattr(self, f"_r_grid_{f.lower().replace('.', '_')}")(name, *args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_grid) found in file={f}")
@@ -1530,55 +1513,55 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_grid_nc(self, name, *args, **kwargs):
         # Read grid from the <>.nc file
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_grid_nc, f)
         if f.is_file():
             # Capitalize correctly
-            name = {'rho': 'Rho',
-                    'rhoinit': 'RhoInit',
-                    'vna': 'Vna',
-                    'ioch': 'Chlocal',
-                    'chlocal': 'Chlocal',
-                    'toch': 'RhoTot',
-                    'totalcharge': 'RhoTot',
-                    'rhotot': 'RhoTot',
-                    'drho': 'RhoDelta',
-                    'deltarho': 'RhoDelta',
-                    'rhodelta': 'RhoDelta',
-                    'vh': 'Vh',
-                    'electrostaticpotential': 'Vh',
-                    'rhoxc': 'RhoXC',
-                    'vt': 'Vt',
-                    'totalpotential': 'Vt',
-                    'bader': 'RhoBader',
-                    'baderrho': 'RhoBader',
-                    'rhobader': 'RhoBader'
+            name = {"rho": "Rho",
+                    "rhoinit": "RhoInit",
+                    "vna": "Vna",
+                    "ioch": "Chlocal",
+                    "chlocal": "Chlocal",
+                    "toch": "RhoTot",
+                    "totalcharge": "RhoTot",
+                    "rhotot": "RhoTot",
+                    "drho": "RhoDelta",
+                    "deltarho": "RhoDelta",
+                    "rhodelta": "RhoDelta",
+                    "vh": "Vh",
+                    "electrostaticpotential": "Vh",
+                    "rhoxc": "RhoXC",
+                    "vt": "Vt",
+                    "totalpotential": "Vt",
+                    "bader": "RhoBader",
+                    "baderrho": "RhoBader",
+                    "rhobader": "RhoBader"
             }.get(name.lower())
             return ncSileSiesta(f).read_grid(name, **kwargs)
         return None
 
     def _r_grid_grid_nc(self, name, *args, **kwargs):
         # Read grid from the <>.nc file
-        name = {'rho': 'Rho',
-                'rhoinit': 'RhoInit',
-                'vna': 'Vna',
-                'ioch': 'Chlocal',
-                'chlocal': 'Chlocal',
-                'toch': 'TotalCharge',
-                'totalcharge': 'TotalCharge',
-                'rhotot': 'TotalCharge',
-                'drho': 'DeltaRho',
-                'deltarho': 'DeltaRho',
-                'rhodelta': 'DeltaRho',
-                'vh': 'ElectrostaticPotential',
-                'electrostaticpotential': 'ElectrostaticPotential',
-                'rhoxc': 'RhoXC',
-                'vt': 'TotalPotential',
-                'totalpotential': 'TotalPotential',
-                'bader': 'BaderCharge',
-                'baderrho': 'BaderCharge',
-                'rhobader': 'BaderCharge'
-        }.get(name.lower()) + '.grid.nc'
+        name = {"rho": "Rho",
+                "rhoinit": "RhoInit",
+                "vna": "Vna",
+                "ioch": "Chlocal",
+                "chlocal": "Chlocal",
+                "toch": "TotalCharge",
+                "totalcharge": "TotalCharge",
+                "rhotot": "TotalCharge",
+                "drho": "DeltaRho",
+                "deltarho": "DeltaRho",
+                "rhodelta": "DeltaRho",
+                "vh": "ElectrostaticPotential",
+                "electrostaticpotential": "ElectrostaticPotential",
+                "rhoxc": "RhoXC",
+                "vt": "TotalPotential",
+                "totalpotential": "TotalPotential",
+                "bader": "BaderCharge",
+                "baderrho": "BaderCharge",
+                "rhobader": "BaderCharge"
+        }.get(name.lower()) + ".grid.nc"
 
         f = self.dir_file(name)
         _track_file(self._r_grid_grid_nc, f)
@@ -1590,28 +1573,28 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_grid_bin(self, name, *args, **kwargs):
         # Read grid from the <>.VT/... file
-        name = {'rho': '.RHO',
-                'rhoinit': '.RHOINIT',
-                'vna': '.VNA',
-                'ioch': '.IOCH',
-                'chlocal': '.IOCH',
-                'toch': '.TOCH',
-                'totalcharge': '.TOCH',
-                'rhotot': '.TOCH',
-                'drho': '.DRHO',
-                'deltarho': '.DRHO',
-                'rhodelta': '.DRHO',
-                'vh': '.VH',
-                'electrostaticpotential': '.VH',
-                'rhoxc': '.RHOXC',
-                'vt': '.VT',
-                'totalpotential': '.VT',
-                'bader': '.BADER',
-                'baderrho': '.BADER',
-                'rhobader': '.BADER'
+        name = {"rho": ".RHO",
+                "rhoinit": ".RHOINIT",
+                "vna": ".VNA",
+                "ioch": ".IOCH",
+                "chlocal": ".IOCH",
+                "toch": ".TOCH",
+                "totalcharge": ".TOCH",
+                "rhotot": ".TOCH",
+                "drho": ".DRHO",
+                "deltarho": ".DRHO",
+                "rhodelta": ".DRHO",
+                "vh": ".VH",
+                "electrostaticpotential": ".VH",
+                "rhoxc": ".RHOXC",
+                "vt": ".VT",
+                "totalpotential": ".VT",
+                "bader": ".BADER",
+                "baderrho": ".BADER",
+                "rhobader": ".BADER"
         }.get(name.lower())
 
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + name)
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + name)
         _track_file(self._r_grid_bin, f)
         if f.is_file():
             grid = get_sile_class(f)(f).read_grid(*args, **kwargs)
@@ -1631,11 +1614,11 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the basis information.
-            By default this is ``['nc', 'ion', 'ORB_INDX', 'fdf']``
+            By default this is ``["nc", "ion", "ORB_INDX", "fdf"]``
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'ion', 'ORB_INDX', 'fdf']))
+        order = _listify_str(kwargs.pop("order", ["nc", "ion", "ORB_INDX", "fdf"]))
         for f in order:
-            v = getattr(self, '_r_basis_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_basis_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 if self.track:
                     info(f"{self.file}(read_basis) found in file={f}")
@@ -1644,7 +1627,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_basis_nc(self):
         # Read basis from <>.nc file
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_basis_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_basis()
@@ -1652,9 +1635,9 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_basis_ion(self):
         # Read basis from <>.ion.nc file or <>.ion.xml
-        spcs = self.get('ChemicalSpeciesLabel')
+        spcs = self.get("ChemicalSpeciesLabel")
         if spcs is None:
-            # We haven't found the chemical and species label
+            # We haven"t found the chemical and species label
             # so return nothing
             return None
 
@@ -1670,11 +1653,11 @@ class fdfSileSiesta(SileSiesta):
             f = self.dir_file(lbl + ".ext")
 
             # now try and read the basis
-            if f.with_suffix('.ion.nc').is_file():
-                atoms[idx] = ionncSileSiesta(f.with_suffix('.ion.nc')).read_basis()
+            if f.with_suffix(".ion.nc").is_file():
+                atoms[idx] = ionncSileSiesta(f.with_suffix(".ion.nc")).read_basis()
                 found_one = True
-            elif f.with_suffix('.ion.xml').is_file():
-                atoms[idx] = ionxmlSileSiesta(f.with_suffix('.ion.xml')).read_basis()
+            elif f.with_suffix(".ion.xml").is_file():
+                atoms[idx] = ionxmlSileSiesta(f.with_suffix(".ion.xml")).read_basis()
                 found_one = True
             else:
                 # default the atom to not have a range, and no associated orbitals
@@ -1689,7 +1672,7 @@ class fdfSileSiesta(SileSiesta):
         return atoms
 
     def _r_basis_orb_indx(self):
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.ORB_INDX')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".ORB_INDX")
         _track_file(self._r_basis_orb_indx, f)
         if f.is_file():
             info(f"Siesta basis information is read from {f}, the radial functions are not accessible.")
@@ -1698,9 +1681,9 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_basis_fdf(self):
         # Read basis from fdf file
-        spcs = self.get('ChemicalSpeciesLabel')
+        spcs = self.get("ChemicalSpeciesLabel")
         if spcs is None:
-            # We haven't found the chemical and species label
+            # We haven"t found the chemical and species label
             # so return nothing
             return None
 
@@ -1710,7 +1693,7 @@ class fdfSileSiesta(SileSiesta):
 
         pao_basis = self.get("PAO.Basis", default=[])
 
-        all_mass = self.get('AtomicMass', default=[])
+        all_mass = self.get("AtomicMass", default=[])
         # default mass
         mass = None
 
@@ -1770,10 +1753,12 @@ class fdfSileSiesta(SileSiesta):
         """
         if isinstance(block, str):
             block = block.splitlines()
+
+        # Quick exit if needed
         if len(block) == 0:
             if specie is None:
                 return []
-            return {}
+            return None
 
         # make a copy
         block = list(block)
@@ -1784,7 +1769,7 @@ class fdfSileSiesta(SileSiesta):
             while len(out) == 0:
                 if len(block) == 0:
                     return out
-                out = block.pop(0).split('#')[0].strip(" \n\r\t")
+                out = block.pop(0).split("#")[0].strip(" \n\r\t")
             return out
 
         def parse_next():
@@ -1813,7 +1798,7 @@ class fdfSileSiesta(SileSiesta):
                 # This is because the first n=<integer> should never
                 # contain a ".", whereas the contraction *should*.
                 if len(block) > 0:
-                    if '.' in block[0].split()[0]:
+                    if "." in block[0].split()[0]:
                         contract_line = blockline()
 
                 # remove n=
@@ -1827,7 +1812,7 @@ class fdfSileSiesta(SileSiesta):
                     n = first
                     l = second
                     nzeta = int(nl_line.pop(0))
-                except:
+                except Exception:
                     l = first
                     nzeta = second
 
@@ -1839,7 +1824,7 @@ class fdfSileSiesta(SileSiesta):
                         try:
                             npol = int(nl_line[0])
                             nl_line.pop(0)
-                        except:
+                        except Exception:
                             npol = 1
 
                 # now we have everything to build the orbitals etc.
@@ -1879,7 +1864,7 @@ class fdfSileSiesta(SileSiesta):
 
         if specie is None:
             return atoms
-        return atoms[specie]
+        return atoms.get(specie, None)
 
     def _r_add_overlap(self, parent_call, M):
         """ Internal routine to ensure that the overlap matrix is read and added to the matrix `M` """
@@ -1890,8 +1875,8 @@ class fdfSileSiesta(SileSiesta):
                 M._csr._D[:, -1] = S._csr._D[:, 0]
             else:
                 raise ValueError
-        except:
-            warn(str(self) + f' could not succesfully read the overlap matrix in {parent_call}.')
+        except Exception:
+            warn(f"{self!s} could not succesfully read the overlap matrix in {parent_call}.")
 
     def read_density_matrix(self, *args, **kwargs):
         """ Try and read density matrix by reading the <>.nc, <>.TSDE files, <>.DM (in that order)
@@ -1903,11 +1888,11 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the density matrix
-            By default this is ``['nc', 'TSDE', 'DM']``.
+            By default this is ``["nc", "TSDE", "DM"]``.
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'TSDE', 'DM']))
+        order = _listify_str(kwargs.pop("order", ["nc", "TSDE", "DM"]))
         for f in order:
-            DM = getattr(self, '_r_density_matrix_{}'.format(f.lower()))(*args, **kwargs)
+            DM = getattr(self, f"_r_density_matrix_{f.lower()}")(*args, **kwargs)
             if DM is not None:
                 _track(self.read_density_matrix, f"found file {f}")
                 return DM
@@ -1915,7 +1900,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_density_matrix_nc(self, *args, **kwargs):
         """ Try and read the density matrix by reading the <>.nc """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_density_matrix_nc, f)
         DM = None
         if f.is_file():
@@ -1925,28 +1910,28 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_density_matrix_tsde(self, *args, **kwargs):
         """ Read density matrix from the TSDE file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSDE')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSDE")
         _track_file(self._r_density_matrix_tsde, f)
         DM = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS', 'fdf'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "fdf"])
             DM = tsdeSileSiesta(f).read_density_matrix(*args, **kwargs)
-            self._r_add_overlap('_r_density_matrix_tsde', DM)
+            self._r_add_overlap("_r_density_matrix_tsde", DM)
         return DM
 
     def _r_density_matrix_dm(self, *args, **kwargs):
         """ Read density matrix from the DM file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.DM')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".DM")
         _track_file(self._r_density_matrix_dm, f)
         DM = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS', 'fdf'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "fdf"])
             DM = dmSileSiesta(f).read_density_matrix(*args, **kwargs)
-            self._r_add_overlap('_r_density_matrix_dm', DM)
+            self._r_add_overlap("_r_density_matrix_dm", DM)
         return DM
 
     def read_energy_density_matrix(self, *args, **kwargs):
@@ -1959,11 +1944,11 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the density matrix
-            By default this is ``['nc', 'TSDE']``.
+            By default this is ``["nc", "TSDE"]``.
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'TSDE']))
+        order = _listify_str(kwargs.pop("order", ["nc", "TSDE"]))
         for f in order:
-            EDM = getattr(self, '_r_energy_density_matrix_{}'.format(f.lower()))(*args, **kwargs)
+            EDM = getattr(self, f"_r_energy_density_matrix_{f.lower()}")(*args, **kwargs)
             if EDM is not None:
                 _track(self.read_energy_density_matrix, f"found file {f}")
                 return EDM
@@ -1971,7 +1956,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_energy_density_matrix_nc(self, *args, **kwargs):
         """ Read energy density matrix by reading the <>.nc """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_energy_density_matrix_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_energy_density_matrix(*args, **kwargs)
@@ -1979,15 +1964,15 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_energy_density_matrix_tsde(self, *args, **kwargs):
         """ Read energy density matrix from the TSDE file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSDE')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSDE")
         _track_file(self._r_energy_density_matrix_tsde, f)
         EDM = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS"])
             EDM = tsdeSileSiesta(f).read_energy_density_matrix(*args, **kwargs)
-            self._r_add_overlap('_r_energy_density_matrix_tsde', EDM)
+            self._r_add_overlap("_r_energy_density_matrix_tsde", EDM)
         return EDM
 
     def read_overlap(self, *args, **kwargs):
@@ -2000,11 +1985,11 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the overlap matrix
-            By default this is ``['nc', 'TSHS', 'HSX', 'onlyS']``.
+            By default this is ``["nc", "TSHS", "HSX", "onlyS"]``.
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'TSHS', 'HSX', 'onlyS']))
+        order = _listify_str(kwargs.pop("order", ["nc", "TSHS", "HSX", "onlyS"]))
         for f in order:
-            v = getattr(self, '_r_overlap_{}'.format(f.lower()))(*args, **kwargs)
+            v = getattr(self, f"_r_overlap_{f.lower()}")(*args, **kwargs)
             if v is not None:
                 _track(self.read_overlap, f"found file {f}")
                 return v
@@ -2012,7 +1997,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_overlap_nc(self, *args, **kwargs):
         """ Read overlap from the nc file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_overlap_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_overlap(*args, **kwargs)
@@ -2020,37 +2005,37 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_overlap_tshs(self, *args, **kwargs):
         """ Read overlap from the TSHS file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSHS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSHS")
         _track_file(self._r_overlap_tshs, f)
         S = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS"])
             S = tshsSileSiesta(f).read_overlap(*args, **kwargs)
         return S
 
     def _r_overlap_hsx(self, *args, **kwargs):
         """ Read overlap from the HSX file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.HSX')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".HSX")
         _track_file(self._r_overlap_hsx, f)
         S = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS', 'fdf'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "fdf"])
             S = hsxSileSiesta(f).read_overlap(*args, **kwargs)
         return S
 
     def _r_overlap_onlys(self, *args, **kwargs):
         """ Read overlap from the onlyS file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.onlyS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".onlyS")
         _track_file(self._r_overlap_onlys, f)
         S = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS', 'fdf'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "fdf"])
             S = onlysSileSiesta(f).read_overlap(*args, **kwargs)
         return S
 
@@ -2064,11 +2049,11 @@ class fdfSileSiesta(SileSiesta):
         ----------
         order: list of str, optional
             the order of which to try and read the Hamiltonian.
-            By default this is ``['nc', 'TSHS', 'HSX']``.
+            By default this is ``["nc", "TSHS", "HSX"]``.
         """
-        order = _listify_str(kwargs.pop('order', ['nc', 'TSHS', 'HSX']))
+        order = _listify_str(kwargs.pop("order", ["nc", "TSHS", "HSX"]))
         for f in order:
-            H = getattr(self, '_r_hamiltonian_{}'.format(f.lower()))(*args, **kwargs)
+            H = getattr(self, f"_r_hamiltonian_{f.lower()}")(*args, **kwargs)
             if H is not None:
                 _track(self.read_hamiltonian, f"found file {f}")
                 return H
@@ -2076,7 +2061,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_hamiltonian_nc(self, *args, **kwargs):
         """ Read Hamiltonian from the nc file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.nc')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
         _track_file(self._r_hamiltonian_nc, f)
         if f.is_file():
             return ncSileSiesta(f).read_hamiltonian(*args, **kwargs)
@@ -2084,29 +2069,30 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_hamiltonian_tshs(self, *args, **kwargs):
         """ Read Hamiltonian from the TSHS file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.TSHS')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".TSHS")
         _track_file(self._r_hamiltonian_tshs, f)
         H = None
         if f.is_file():
-            if 'geometry' not in kwargs:
+            if "geometry" not in kwargs:
                 # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS'])
+                kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "HSX"])
             H = tshsSileSiesta(f).read_hamiltonian(*args, **kwargs)
         return H
 
     def _r_hamiltonian_hsx(self, *args, **kwargs):
         """ Read Hamiltonian from the HSX file """
-        f = self.dir_file(self.get('SystemLabel', default='siesta') + '.HSX')
+        f = self.dir_file(self.get("SystemLabel", default="siesta") + ".HSX")
         _track_file(self._r_hamiltonian_hsx, f)
         H = None
         if f.is_file():
-            if 'geometry' not in kwargs:
-                # to ensure we get the correct orbital count
-                kwargs['geometry'] = self.read_geometry(True, order=['nc', 'TSHS', 'fdf'])
+            if hsxSileSiesta(f).version == 0:
+                if "geometry" not in kwargs:
+                    # to ensure we get the correct orbital count
+                    kwargs["geometry"] = self.read_geometry(True, order=["nc", "TSHS", "fdf"])
             H = hsxSileSiesta(f).read_hamiltonian(*args, **kwargs)
             Ef = self.read_fermi_level()
             if Ef is None:
-                info(f"{str(self)}.read_hamiltonian from HSX file failed shifting to the Fermi-level.")
+                info(f"{self!s}.read_hamiltonian from HSX file failed shifting to the Fermi-level.")
             else:
                 H.shift(-Ef)
         return H
@@ -2118,6 +2104,7 @@ class fdfSileSiesta(SileSiesta):
 
         # We must by-pass this fdf-file for importing
         import sisl.io.siesta as sis
+        import sisl.io.tbtrans as tbt
 
         # The fdf parser is more complicated
 
@@ -2126,22 +2113,17 @@ class fdfSileSiesta(SileSiesta):
         sp = p.add_subparsers(help="Determine which part of the fdf-file that should be processed.")
 
         # Get the label which retains all the sub-modules
-        label = self.get('SystemLabel', default='siesta')
+        label = self.get("SystemLabel", default="siesta")
         f_label = label + ".ext"
 
         def label_file(suffix):
             return self.dir_file(f_label).with_suffix(suffix)
 
         # The default on all sub-parsers are the retrieval and setting
+        namespace = default_namespace(_fdf=self, _fdf_first=True)
 
-        d = {
-            '_fdf': self,
-            '_fdf_first': True,
-        }
-        namespace = default_namespace(**d)
-
-        ep = sp.add_parser('edit',
-                           help='Change or read and print data from the fdf file')
+        ep = sp.add_parser("edit",
+                           help="Change or read and print data from the fdf file")
 
         # As the fdf may provide additional stuff, we do not add EVERYTHING from
         # the Geometry class.
@@ -2153,12 +2135,12 @@ class fdfSileSiesta(SileSiesta):
                 if ns._fdf_first:
                     # Append to the end of the file
                     with ns._fdf as fd:
-                        fd.write('\n\n# SISL added keywords\n')
-                    setattr(ns, '_fdf_first', False)
+                        fd.write("\n\n# SISL added keywords\n")
+                    setattr(ns, "_fdf_first", False)
                 ns._fdf.set(key, val)
-        ep.add_argument('--set', '-s', nargs=2, metavar=('KEY', 'VALUE'),
+        ep.add_argument("--set", "-s", nargs=2, metavar=("KEY", "VALUE"),
                         action=FDFAdd,
-                        help='Add a key to the FDF file. If it already exists it will be overwritten')
+                        help="Add a key to the FDF file. If it already exists it will be overwritten")
 
         class FDFGet(argparse.Action):
 
@@ -2167,92 +2149,92 @@ class fdfSileSiesta(SileSiesta):
                 # Currently, we write out the unit "as-is"
                 val = ns._fdf.get(value[0], with_unit=True)
                 if val is None:
-                    print(f'# {value[0]} is currently not in the FDF file ')
+                    print(f"# {value[0]} is currently not in the FDF file ")
                     return
 
                 if isinstance(val, tuple):
-                    print(ns._fdf.print(value[0], '{} {}'.format(*val)))
+                    print(ns._fdf.print(value[0], "{} {}".format(*val)))
                 else:
                     print(ns._fdf.print(value[0], val))
 
-        ep.add_argument('--get', '-g', nargs=1, metavar='KEY',
+        ep.add_argument("--get", "-g", nargs=1, metavar="KEY",
                         action=FDFGet,
-                        help='Print (to stdout) the value of the key in the FDF file.')
+                        help="Print (to stdout) the value of the key in the FDF file.")
 
         # If the XV file exists, it has precedence
         # of the contained geometry (we will issue
         # a warning in that case)
-        f = label_file('.XV')
+        f = label_file(".XV")
         try:
             geom = self.read_geometry(True)
 
-            tmp_p = sp.add_parser('geom',
+            tmp_p = sp.add_parser("geom",
                                   help="Edit the contained geometry in the file")
             tmp_p, tmp_ns = geom.ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
-        except:
+        except Exception:
             # Allowed pass due to pythonic reading
             pass
 
-        f = label_file('.bands')
+        f = label_file(".bands")
         if f.is_file():
-            tmp_p = sp.add_parser('band',
+            tmp_p = sp.add_parser("band",
                                   help="Manipulate bands file from the Siesta simulation")
             tmp_p, tmp_ns = sis.bandsSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.PDOS.xml')
+        f = label_file(".PDOS.xml")
         if f.is_file():
-            tmp_p = sp.add_parser('pdos',
+            tmp_p = sp.add_parser("pdos",
                                   help="Manipulate PDOS.xml file from the Siesta simulation")
             tmp_p, tmp_ns = sis.pdosSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.EIG')
+        f = label_file(".EIG")
         if f.is_file():
-            tmp_p = sp.add_parser('eig',
+            tmp_p = sp.add_parser("eig",
                                   help="Manipulate EIG file from the Siesta simulation")
             tmp_p, tmp_ns = sis.eigSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        #f = label + '.FA'
+        #f = label + ".FA"
         #if isfile(f):
-        #    tmp_p = sp.add_parser('force',
+        #    tmp_p = sp.add_parser("force",
         #                          help="Manipulate FA file from the Siesta simulation")
         #    tmp_p, tmp_ns = sis.faSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
         #    namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.TBT.nc')
+        f = label_file(".TBT.nc")
         if f.is_file():
-            tmp_p = sp.add_parser('tbt',
+            tmp_p = sp.add_parser("tbt",
                                   help="Manipulate tbtrans output file")
-            tmp_p, tmp_ns = sis.tbtncSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
+            tmp_p, tmp_ns = tbt.tbtncSileTBtrans(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.TBT.Proj.nc')
+        f = label_file(".TBT.Proj.nc")
         if f.is_file():
-            tmp_p = sp.add_parser('tbt-proj',
+            tmp_p = sp.add_parser("tbt-proj",
                                   help="Manipulate tbtrans projection output file")
-            tmp_p, tmp_ns = sis.tbtprojncSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
+            tmp_p, tmp_ns = tbt.tbtprojncSileTBtrans(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.PHT.nc')
+        f = label_file(".PHT.nc")
         if f.is_file():
-            tmp_p = sp.add_parser('pht',
+            tmp_p = sp.add_parser("pht",
                                   help="Manipulate the phtrans output file")
-            tmp_p, tmp_ns = sis.phtncSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
+            tmp_p, tmp_ns = tbt.phtncSilePHtrans(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.PHT.Proj.nc')
+        f = label_file(".PHT.Proj.nc")
         if f.is_file():
-            tmp_p = sp.add_parser('pht-proj',
+            tmp_p = sp.add_parser("pht-proj",
                                   help="Manipulate phtrans projection output file")
-            tmp_p, tmp_ns = sis.phtprojncSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
+            tmp_p, tmp_ns = tbt.phtprojncSilePHtrans(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
 
-        f = label_file('.nc')
+        f = label_file(".nc")
         if f.is_file():
-            tmp_p = sp.add_parser('nc',
+            tmp_p = sp.add_parser("nc",
                                   help="Manipulate Siesta NetCDF output file")
             tmp_p, tmp_ns = sis.ncSileSiesta(f).ArgumentParser(tmp_p, *args, **kwargs)
             namespace = merge_instances(namespace, tmp_ns)
@@ -2260,4 +2242,4 @@ class fdfSileSiesta(SileSiesta):
         return p, namespace
 
 
-add_sile('fdf', fdfSileSiesta, case=False, gzip=True)
+add_sile("fdf", fdfSileSiesta, case=False, gzip=True)

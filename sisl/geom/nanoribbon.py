@@ -5,25 +5,26 @@ from numbers import Integral
 import numpy as np
 
 from sisl._internal import set_module
-from sisl import geom, Atom, Geometry
+from sisl import geom, Atom
+from ._common import geometry_define_nsc
 
 __all__ = ['nanoribbon', 'graphene_nanoribbon', 'agnr', 'zgnr']
 
 
 @set_module("sisl.geom")
-def nanoribbon(bond, atoms, width, kind='armchair'):
+def nanoribbon(width, bond, atoms, kind='armchair'):
     r""" Construction of a nanoribbon unit cell of type armchair or zigzag.
 
     The geometry is oriented along the :math:`x` axis.
 
     Parameters
     ----------
+    width : int
+       number of atoms in the transverse direction
     bond : float
        bond length between atoms in the honeycomb lattice
     atoms : Atom
        atom (or atoms) in the honeycomb lattice
-    width : int
-       number of atoms in the transverse direction
     kind : {'armchair', 'zigzag'}
        type of ribbon
 
@@ -77,6 +78,8 @@ def nanoribbon(bond, atoms, width, kind='armchair'):
     # Move inside unit cell
     xyz = ribbon.xyz.min(axis=0) * [1, 1, 0]
 
+    geometry_define_nsc(ribbon, [True, False, False])
+
     return ribbon.move(-xyz + [0, 10, 0])
 
 
@@ -89,7 +92,7 @@ def graphene_nanoribbon(width, bond=1.42, atoms=None, kind='armchair'):
     width : int
        number of atoms in the transverse direction
     bond : float, optional
-       C-C bond length. Defaults to 1.42
+       C-C bond length
     atoms : Atom, optional
        atom (or atoms) in the honeycomb lattice. Defaults to ``Atom(6)``
     kind : {'armchair', 'zigzag'}
@@ -105,7 +108,7 @@ def graphene_nanoribbon(width, bond=1.42, atoms=None, kind='armchair'):
     """
     if atoms is None:
         atoms = Atom(Z=6, R=bond * 1.01)
-    return nanoribbon(bond, atoms, width, kind=kind)
+    return nanoribbon(width, bond, atoms, kind=kind)
 
 
 @set_module("sisl.geom")
@@ -117,7 +120,7 @@ def agnr(width, bond=1.42, atoms=None):
     width : int
        number of atoms in the transverse direction
     bond : float, optional
-       C-C bond length. Defaults to 1.42
+       C-C bond length
     atoms : Atom, optional
        atom (or atoms) in the honeycomb lattice. Defaults to ``Atom(6)``
 
@@ -141,7 +144,7 @@ def zgnr(width, bond=1.42, atoms=None):
     width : int
        number of atoms in the transverse direction
     bond : float, optional
-       C-C bond length. Defaults to 1.42
+       C-C bond length
     atoms : Atom, optional
        atom (or atoms) in the honeycomb lattice. Defaults to ``Atom(6)``
 

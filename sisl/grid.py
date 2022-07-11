@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-from functools import partial
 from numbers import Integral, Real
 from math import pi
 
@@ -398,7 +397,7 @@ class Grid(SuperCellChild):
             d['dtype'] = dtype
         grid = self.__class__([1] * 3, bc=np.copy(self.bc), **d)
         # This also ensures the shape is copied!
-        grid.grid = self.grid.copy()
+        grid.grid = self.grid.astype(dtype=d['dtype'])
         return grid
 
     def swapaxes(self, a, b):
@@ -1376,7 +1375,6 @@ class Grid(SuperCellChild):
         positional_out : bool, False
            If `True`, adds a positional argument which acts as --out. This may be handy if only the geometry is in the argument list.
         """
-        limit_args = kwargs.get('limit_arguments', True)
         short = kwargs.get('short', False)
 
         def opts(*args):
@@ -1413,7 +1411,6 @@ class Grid(SuperCellChild):
             def __call__(self, parser, ns, value, option_string=None):
                 grid = Grid.read(value)
                 ns._grid -= grid
-                del grid
         p.add_argument(*opts('--diff', '-d'), action=DiffGrid,
                        help='Subtract another grid (they must be commensurate).')
 
@@ -1758,7 +1755,7 @@ This may be unexpected but enables one to do advanced manipulations.
     try:
         if not hasattr(ns, '_input_file'):
             setattr(ns, '_input_file', input_file)
-    except:
+    except Exception:
         pass
 
     # Now try and figure out the actual arguments

@@ -1,17 +1,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import numpy as np
-import itertools
 from functools import partial
 
 import sisl
 from sisl.utils.mathematics import fnorm
-from ..plot import Plot, entry_point
 from .geometry import GeometryPlot, BoundGeometry
 from ..plotutils import find_files
-from ..input_fields import TextInput, FilePathInput, SwitchInput, ColorPicker, DropdownInput, \
-     IntegerInput, FloatInput, RangeSlider, QueriesInput, ProgramaticInput, SileInput
+from ..input_fields import TextInput, BoolInput,\
+     IntegerInput, FloatInput, SileInput
 
 
 class BondLengthMap(GeometryPlot):
@@ -57,7 +54,12 @@ class BondLengthMap(GeometryPlot):
     geom_file: str, optional
         A file name that can read a geometry
     show_bonds: bool, optional
-        Also show bonds between atoms.
+        Show bonds between atoms.
+    bonds_style: dict, optional
+        Customize the style of the bonds by passing style specifications.
+        Currently, you can only pass one style specification. Styling bonds
+        individually is not supported yet, but it will be in the future.
+        Structure of the dict: {          }
     axes:  optional
         The axis along which you want to see the geometry.              You
         can provide as many axes as dimensions you want for your plot.
@@ -76,27 +78,39 @@ class BondLengthMap(GeometryPlot):
         rendered, 'axes': render axes only, 'box': render a bounding box)
     nsc: array-like, optional
         Make the geometry larger by tiling it along each lattice vector
-    atoms:  optional
+    atoms: dict, optional
         The atoms that are going to be displayed in the plot.
         This also has an impact on bonds (see the `bind_bonds_to_ats` and
         `show_atoms` parameters).             If set to None, all atoms are
-        displayed
+        displayed   Structure of the dict: {         'index':    Structure of
+        the dict: {         'in':  }         'fx':          'fy':
+        'fz':          'x':          'y':          'z':          'Z':
+        'neighbours':    Structure of the dict: {         'range':
+        'R':          'neigh_tag':  }         'tag':          'seq':  }
     atoms_style: array-like of dict, optional
         Customize the style of the atoms by passing style specifications.
         Each style specification can have an "atoms" key to select the atoms
         for which             that style should be used. If an atom fits into
         more than one selector, the last             specification is used.
-        Each item is a dict. Structure of the expected dicts:{
-        'atoms':          'color':          'size':          'opacity':
-        'vertices': In a 3D representation, the number of vertices that each
-        atom sphere is composed of. }
+        Each item is a dict.    Structure of the dict: {         'atoms':
+        Structure of the dict: {         'index':    Structure of the dict: {
+        'in':  }         'fx':          'fy':          'fz':          'x':
+        'y':          'z':          'Z':          'neighbours':    Structure
+        of the dict: {         'range':          'R':          'neigh_tag':
+        }         'tag':          'seq':  }         'color':          'size':
+        'opacity':          'vertices': In a 3D representation, the number of
+        vertices that each atom sphere is composed of. }
     arrows: array-like of dict, optional
         Add arrows centered at the atoms to display some vector property.
         You can add as many arrows as you want, each with different styles.
-        Each item is a dict. Structure of the expected dicts:{
-        'atoms':          'data':          'scale':          'color':
-        'width':          'name':          'arrowhead_scale':
-        'arrowhead_angle':  }
+        Each item is a dict.    Structure of the dict: {         'atoms':
+        Structure of the dict: {         'index':    Structure of the dict: {
+        'in':  }         'fx':          'fy':          'fz':          'x':
+        'y':          'z':          'Z':          'neighbours':    Structure
+        of the dict: {         'range':          'R':          'neigh_tag':
+        }         'tag':          'seq':  }         'data':          'scale':
+        'color':          'width':          'name':
+        'arrowhead_scale':          'arrowhead_angle':  }
     atoms_scale: float, optional
         A scaling factor for atom sizes. This is a very quick way to rescale.
     atoms_colorscale: str, optional
@@ -114,14 +128,16 @@ class BondLengthMap(GeometryPlot):
         Number of points that fill a bond in 2D in case each bond has a
         different color or different size. More points will make it look
         more like a line but will slow plot rendering down.
-    cell_style: array-like of dict, optional
-        The style of the unit cell lines   Each item is a dict. Structure of
-        the expected dicts:{         'color':          'width':  }
+    cell_style: dict, optional
+        The style of the unit cell lines   Structure of the dict: {
+        'color':          'width':          'opacity':  }
     root_fdf: fdfSileSiesta, optional
         Path to the fdf file that is the 'parent' of the results.
     results_path: str, optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
+    entry_points_order: array-like, optional
+        Order with which entry points will be attempted.
     backend:  optional
         Directory where the files with the simulations results are
         located. This path has to be relative to the root fdf.
@@ -131,7 +147,7 @@ class BondLengthMap(GeometryPlot):
 
     _parameters = (
 
-        SwitchInput(
+        BoolInput(
             key = "geom_from_output", name = "Geometry from output",
             default = True,
             group = "dataread",
@@ -147,7 +163,6 @@ class BondLengthMap(GeometryPlot):
             hasattr=['read_geometry'],
             dtype=(str, sisl.Geometry),
             group = "dataread",
-            width = "s100% m50% l33%",
             params = {
                 "placeholder": "Write the path to your strain reference file here..."
             },
@@ -156,7 +171,7 @@ class BondLengthMap(GeometryPlot):
             If provided, colors can indicate strain values. Otherwise they are just bond length"""
         ),
 
-        SwitchInput(
+        BoolInput(
             key = "strain", name = "Display strain",
             default = True,
             params = {
@@ -178,7 +193,6 @@ class BondLengthMap(GeometryPlot):
         TextInput(
             key="colorscale", name="Plotly colormap",
             default="viridis",
-            width="s100% m50% l33%",
             params={
                 "placeholder": "Write a valid plotly colormap here..."
             },
@@ -216,7 +230,7 @@ class BondLengthMap(GeometryPlot):
             """
         ),
 
-        SwitchInput(
+        BoolInput(
             key='colorbar', name='Show colorbar',
             default=True,
             help="""Whether the color bar should be displayed or not."""
@@ -283,7 +297,7 @@ class BondLengthMap(GeometryPlot):
 
         self.get_param("atoms").update_options(self.geometry)
 
-    def _wrap_bond3D(self, bond, show_strain=False):
+    def _wrap_bond3D(self, bond, bonds_styles, show_strain=False):
         """
         Receives a bond and sets its color to the bond length for the 3D case
         """
@@ -297,12 +311,12 @@ class BondLengthMap(GeometryPlot):
         self.colors.append(color)
 
         return {
-            **self._default_wrap_bond3D(bond),
+            **self._default_wrap_bond3D(bond, bonds_styles=bonds_styles),
             "color": color,
             "name": name
         }
 
-    def _wrap_bond2D(self, bond, xys, show_strain=False):
+    def _wrap_bond2D(self, bond, xys, bonds_styles, show_strain=False):
         """
         Receives a bond and sets its color to the bond length for the 2D case
         """
@@ -315,7 +329,10 @@ class BondLengthMap(GeometryPlot):
 
         self.colors.append(color)
 
-        return {"xys": xys, "color": color, "name": name}
+        return {
+            **self._default_wrap_bond2D(bond, xys, bonds_styles=bonds_styles),
+            "color": color, "name": name
+        }
 
     @staticmethod
     def _bond_length(geom, bond):

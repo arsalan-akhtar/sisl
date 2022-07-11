@@ -5,8 +5,6 @@
 """
 Easy conversion of data from different formats to other formats.
 """
-
-import sys
 import argparse
 
 __all__ = ["sisl_cmd"]
@@ -31,7 +29,7 @@ def argparse_patch(parser):
             arg_strings = values[1:]
 
             # set the parser name if requested
-            if self.dest is not argparse.SUPPRESS:
+            if self.dest != argparse.SUPPRESS:
                 setattr(namespace, self.dest, parser_name)
 
             # select the parser
@@ -40,8 +38,8 @@ def argparse_patch(parser):
             except KeyError:
                 args = {'parser_name': parser_name,
                         'choices': ', '.join(self._name_parser_map)}
-                msg = _('unknown parser %(parser_name)r (choices: %(choices)s)') % args
-                raise ArgumentError(self, msg)
+                msg = ('unknown parser %(parser_name)r (choices: %(choices)s)') % args
+                raise argparse.ArgumentError(self, msg)
 
             # parse all the remaining options into the namespace
             # store any unrecognized options on the object, so that the top
@@ -57,8 +55,8 @@ def argparse_patch(parser):
             #    setattr(namespace, key, value)
 
             if arg_strings:
-                vars(namespace).setdefault(_UNRECOGNIZED_ARGS_ATTR, [])
-                getattr(namespace, _UNRECOGNIZED_ARGS_ATTR).extend(arg_strings)
+                vars(namespace).setdefault(argparse._UNRECOGNIZED_ARGS_ATTR, [])
+                getattr(namespace, argparse._UNRECOGNIZED_ARGS_ATTR).extend(arg_strings)
     parser.register('action', 'parsers', MySubParsersAction)
 
 
@@ -75,12 +73,6 @@ def sisl_cmd(argv=None, sile=None):
     # We cannot create a separate ArgumentParser to retrieve a positional arguments
     # as that will grab the first argument for an option!
 
-    # Start creating the command-line utilities that are the actual ones.
-    description = """
-This manipulation utility can handle nearly all files in the sisl code in
-changing ways. It handles files dependent on type AND content.
-    """
-
     if argv is not None:
         # We keep the arguments
         pass
@@ -90,6 +82,12 @@ changing ways. It handles files dependent on type AND content.
         argv = ['--help']
     else:
         argv = sys.argv[1:]
+
+    # Start creating the command-line utilities that are the actual ones.
+    description = """
+This manipulation utility can handle nearly all files in the sisl code in
+changing ways. It handles files dependent on type AND content.
+    """
 
     # Ensure that the arguments have pre-pended spaces
     argv = cmd.argv_negative_fix(argv)

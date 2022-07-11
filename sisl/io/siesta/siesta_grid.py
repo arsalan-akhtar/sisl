@@ -6,7 +6,7 @@ from numbers import Integral
 import numpy as np
 
 from .sile import SileCDFSiesta
-from ..sile import add_sile, sile_raise_write
+from ..sile import add_sile, sile_raise_write, SileError
 
 from sisl._internal import set_module
 from sisl.messages import info
@@ -23,7 +23,10 @@ Ry2eV = unit_convert('Ry', 'eV')
 
 @set_module("sisl.io.siesta")
 class gridncSileSiesta(SileCDFSiesta):
-    """ NetCDF real-space grid file """
+    """ NetCDF real-space grid file
+
+    The grid sile will automatically convert the units from Siesta units (Bohr, Ry) to sisl units (Ang, eV) provided the correct extension is present.
+    """
 
     def read_supercell(self):
         """ Returns a SuperCell object from a Siesta.grid.nc file
@@ -73,7 +76,7 @@ class gridncSileSiesta(SileCDFSiesta):
         try:
             # <>.grid.nc
             base = f.split('.')[-3]
-        except:
+        except Exception:
             base = 'None'
 
         # Unit-conversion

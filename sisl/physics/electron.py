@@ -14,6 +14,7 @@ One may also plot real-space wavefunctions.
 
    DOS
    PDOS
+   COP
    velocity
    velocity_matrix
    berry_phase
@@ -46,13 +47,13 @@ automatically passes the correct ``S`` because it knows the states :math:`k`-poi
 
 from functools import reduce
 import numpy as np
-from numpy import find_common_type
+from numpy import find_common_type, int32
 from numpy import zeros, empty
 from numpy import floor, ceil
 from numpy import conj, dot, ogrid, einsum
-from numpy import cos, sin, exp, pi
-from numpy import int32, complex128
-from numpy import add, angle, argsort, sort
+from numpy import cos, sin, log, exp, pi
+from numpy import add, argsort, sort
+from scipy.sparse import isspmatrix
 
 from sisl._internal import set_module
 from sisl import units, constant
@@ -62,9 +63,9 @@ from sisl._indices import indices_le
 from sisl.oplist import oplist
 from sisl._math_small import xyz_to_spherical_cos_phi
 import sisl._array as _a
-from sisl.linalg import svd_destroy, eigvals_destroy
-from sisl.linalg import eigh, det_destroy
-from sisl.messages import info, warn, SislError, progressbar
+from sisl.linalg import det, sqrth, svd_destroy
+from sisl.linalg import eigvals as la_eigvals
+from sisl.messages import info, warn, SislError, progressbar, deprecate_method
 from sisl._help import dtype_complex_to_real, dtype_real_to_complex
 from .distribution import get_distribution
 from .spin import Spin
@@ -72,19 +73,18 @@ from .sparse import SparseOrbitalBZSpin
 from .state import degenerate_decouple, Coefficient, State, StateC, _FakeMatrix
 
 
-__all__ = ['DOS', 'PDOS']
-__all__ += ['velocity', 'velocity_matrix']
-__all__ += ['spin_moment', 'spin_squared']
-__all__ += ['inv_eff_mass_tensor']
-__all__ += ['berry_phase', 'berry_curvature']
-__all__ += ['conductivity']
-__all__ += ['wavefunction']
-__all__ += ['CoefficientElectron', 'StateElectron', 'StateCElectron']
-__all__ += ['EigenvalueElectron', 'EigenvectorElectron', 'EigenstateElectron']
+__all__ = ["DOS", "PDOS", "COP"]
+__all__ += ["velocity", "velocity_matrix"]
+__all__ += ["spin_moment", "spin_squared"]
+__all__ += ["berry_phase", "berry_curvature"]
+__all__ += ["conductivity"]
+__all__ += ["wavefunction"]
+__all__ += ["CoefficientElectron", "StateElectron", "StateCElectron"]
+__all__ += ["EigenvalueElectron", "EigenvectorElectron", "EigenstateElectron"]
 
 
 @set_module("sisl.physics.electron")
-def DOS(E, eig, distribution='gaussian'):
+def DOS(E, eig, distribution="gaussian"):
     r""" Calculate the density of states (DOS) for a set of energies, `E`, with a distribution function
 
     The :math:`\mathrm{DOS}(E)` is calculated as:
@@ -108,7 +108,8 @@ def DOS(E, eig, distribution='gaussian'):
 
     See Also
     --------
-    ~sisl.physics.distribution : a selected set of implemented distribution functions
+    sisl.physics.distribution : a selected set of implemented distribution functions
+    COP : calculate COOP or COHP curves
     PDOS : projected DOS (same as this, but projected onto each orbital)
     spin_moment : spin moment
 
@@ -124,7 +125,7 @@ def DOS(E, eig, distribution='gaussian'):
 
 
 @set_module("sisl.physics.electron")
-def PDOS(E, eig, state, S=None, distribution='gaussian', spin=None):
+def PDOS(E, eig, state, S=None, distribution="gaussian", spin=None):
     r""" Calculate the projected density of states (PDOS) for a set of energies, `E`, with a distribution function
 
     The :math:`\mathrm{PDOS}(E)` is calculated as:
@@ -186,8 +187,9 @@ def PDOS(E, eig, state, S=None, distribution='gaussian', spin=None):
 
     See Also
     --------
-    ~sisl.physics.distribution : a selected set of implemented distribution functions
+    sisl.physics.distribution : a selected set of implemented distribution functions
     DOS : total DOS (same as summing over orbitals)
+    COP : calculate COOP or COHP curves
     spin_moment : spin moment
 
     Returns
@@ -211,7 +213,7 @@ def PDOS(E, eig, state, S=None, distribution='gaussian', spin=None):
 
     if spin is None:
         if S.shape[1] == state.shape[1] // 2:
-            spin = Spin('nc')
+            spin = Spin("nc")
             S = S[::2, ::2]
         else:
             spin = Spin()
@@ -260,6 +262,83 @@ def PDOS(E, eig, state, S=None, distribution='gaussian', spin=None):
 
 
 @set_module("sisl.physics.electron")
+def COP(E, eig, state, M, distribution="gaussian"):
+    r""" Calculate the Crystal Orbital Population for a set of energies, `E`, with a distribution function
+
+    The :math:`\mathrm{COP}(E)` is calculated as:
+
+    .. math::
+       \mathrm{COP}_{\nu,\mu}(E) = \sum_i \psi^*_{i,\nu}\psi_{i,\mu} \mathbf M e^{i\mathbf k\cdot \mathbf R} D(E-\epsilon_i)
+
+    where :math:`D(\Delta E)` is the distribution function used. Note that the distribution function
+    used may be a user-defined function. Alternatively a distribution function may
+    be aquired from `~sisl.physics.distribution`.
+
+    The COP curves generally refers to COOP or COHP curves.
+    COOP is the Crystal Orbital Overlap Population with `M` being the overlap matrix.
+    COHP is the Crystal Orbital Hamiltonian Population with `M` being the Hamiltonian.
+
+    Parameters
+    ----------
+    E : array_like
+       energies to calculate the COP from
+    eig : array_like
+       eigenvalues
+    state : array_like
+       eigenvectors
+    M : array_like
+       matrix used in the COP curve.
+    distribution : func or str, optional
+       a function that accepts :math:`E-\epsilon` as argument and calculates the
+       distribution function.
+
+    Notes
+    -----
+    This is not tested for non-collinear states.
+    This requires substantial amounts of memory for big systems with lots of energy points.
+
+    This method is considered experimental and implementation may change in the future.
+
+    See Also
+    --------
+    sisl.physics.distribution : a selected set of implemented distribution functions
+    DOS : total DOS
+    PDOS : projected DOS over all orbitals
+    spin_moment : spin moment
+
+    Returns
+    -------
+    ~sisl.oplist.oplist
+        COP calculated at energies, has dimension ``(len(E), *M.shape)``.
+    """
+    if isinstance(distribution, str):
+        distribution = get_distribution(distribution)
+
+    assert len(eig) == len(state), "COP: number of eigenvalues and states are not consistent"
+
+    n_s = M.shape[1] // M.shape[0]
+
+    def calc_cop(M, state, n_s):
+        state = np.tile(np.outer(state.conj(), state), n_s)
+        return M.multiply(state).real
+
+    # now calculate the COP curves for the different energies
+    cop = oplist([0.] * len(E))
+    if isspmatrix(M):
+        for e, s in zip(eig, state):
+            # calculate contribution from this state
+            we = distribution(E - e)
+            tmp = calc_cop(M, s, n_s)
+            cop += [tmp.multiply(w) for w in we]
+    else:
+        for e, s in zip(eig, state):
+            we = distribution(E - e)
+            cop += we.reshape(-1, 1, 1) * calc_cop(M, s, n_s)
+
+    return cop
+
+
+@set_module("sisl.physics.electron")
 def spin_moment(state, S=None, project=False):
     r""" Spin magnetic moment (spin texture) and optionally orbitally resolved moments
 
@@ -303,6 +382,7 @@ def spin_moment(state, S=None, project=False):
     --------
     DOS : total DOS
     PDOS : projected DOS
+    COP : calculate COOP or COHP curves
 
     Returns
     -------
@@ -448,17 +528,25 @@ def velocity(state, dHk, energy=None, dSk=None, degenerate=None, degenerate_dir=
 
     .. math::
 
-       \mathbf{v}_{i\alpha} = \frac1\hbar \langle \psi_i |
-                \frac{\partial}{\partial\mathbf k}_\alpha \mathbf H(\mathbf k) | \psi_i \rangle
+       \mathbf{v}^\alpha_{i} = \frac1\hbar \langle \psi_i |
+                \frac{\partial}{\partial\mathbf k_\alpha} \mathbf H(\mathbf k) | \psi_i \rangle
 
     In case of non-orthogonal basis the equations substitutes :math:`\mathbf H(\mathbf k)` by
     :math:`\mathbf H(\mathbf k) - \epsilon_i\mathbf S(\mathbf k)`.
 
-    The velocities calculated are without the Berry curvature contributions.
-
     In case the user requests to project the velocities (`project` is True) the equation follows that
     of `PDOS` with the same changes.
     In case of non-colinear spin the velocities will be returned also for each spin-direction.
+
+    Notes
+    -----
+    The velocities are calculated without the Berry curvature contribution see Eq. (2) in [1]_.
+    The missing contribution may be added in later editions, for completeness sake, it is:
+
+    .. math::
+        \delta \mathbf v = - \mathbf k\times \Omega_i(\mathbf k)
+
+    where :math:`\Omega_i` is the Berry curvature for state :math:`i`.
 
     Parameters
     ----------
@@ -483,6 +571,15 @@ def velocity(state, dHk, energy=None, dSk=None, degenerate=None, degenerate_dir=
     project : bool, optional
        whether the velocities will be returned projected per orbital
 
+    See Also
+    --------
+    Hamiltonian.dHk : function for generating the Hamiltonian derivatives (`dHk` argument)
+    Hamiltonian.dSk : function for generating the Hamiltonian derivatives (`dSk` argument)
+
+    References
+    ----------
+    .. [1] :doi:`X. Wang, J. R. Yates, I. Souza, D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", PRB **74**, 195118 (2006) <10.1103/PhysRevB.74.195118>`
+
     Returns
     -------
     numpy.ndarray
@@ -500,7 +597,7 @@ def velocity(state, dHk, energy=None, dSk=None, degenerate=None, degenerate_dir=
 
 # dHk is in [Ang eV]
 # velocity units in [Ang/ps]
-_velocity_const = 1 / constant.hbar('eV ps')
+_velocity_const = 1 / constant.hbar("eV ps")
 
 
 def _velocity_non_ortho(state, dHk, energy, dSk, degenerate, degenerate_dir, project):
@@ -568,9 +665,9 @@ def _velocity_ortho(state, dHk, degenerate, degenerate_dir, project):
     else:
         v = np.empty([state.shape[0], 3], dtype=dtype_complex_to_real(state.dtype))
 
-        v[:, 0] = einsum('ij,ji->i', cs, dHk[0].dot(state.T)).real
-        v[:, 1] = einsum('ij,ji->i', cs, dHk[1].dot(state.T)).real
-        v[:, 2] = einsum('ij,ji->i', cs, dHk[2].dot(state.T)).real
+        v[:, 0] = einsum("ij,ji->i", cs, dHk[0].dot(state.T)).real
+        v[:, 1] = einsum("ij,ji->i", cs, dHk[1].dot(state.T)).real
+        v[:, 2] = einsum("ij,ji->i", cs, dHk[2].dot(state.T)).real
 
     return v * _velocity_const
 
@@ -583,16 +680,14 @@ def velocity_matrix(state, dHk, energy=None, dSk=None, degenerate=None, degenera
 
     .. math::
 
-       \mathbf{v}_{ij\alpha} = \frac1\hbar \langle \psi_j |
-                \frac{\partial}{\partial\mathbf k}_\alpha \mathbf H(\mathbf k) | \psi_i \rangle
+       \mathbf{v}^\alpha_{ij} = \frac1\hbar \langle \psi_j |
+                \frac{\partial}{\partial\mathbf k_\alpha} \mathbf H(\mathbf k) | \psi_i \rangle
 
     In case of non-orthogonal basis the equations substitutes :math:`\mathbf H(\mathbf k)` by
     :math:`\mathbf H(\mathbf k) - \epsilon_i\mathbf S(\mathbf k)`.
 
-    Although this matrix should be Hermitian it is not checked, and we explicitly calculate
+    Although the matrix :math:`\mathbf v` should be Hermitian it is not checked, and we explicitly calculate
     all elements.
-
-    The velocities calculated are without the Berry curvature contributions.
 
     Parameters
     ----------
@@ -619,11 +714,27 @@ def velocity_matrix(state, dHk, energy=None, dSk=None, degenerate=None, degenera
     See Also
     --------
     velocity : only calculate the diagonal components of this matrix
+    Hamiltonian.dHk : function for generating the Hamiltonian derivatives (`dHk` argument)
+    Hamiltonian.dSk : function for generating the Hamiltonian derivatives (`dSk` argument)
+
+    Notes
+    -----
+    The velocities are calculated without the Berry curvature contribution see Eq. (2) in [1]_.
+    The missing contribution may be added in later editions, for completeness sake, it is:
+
+    .. math::
+        \delta \mathbf v = - \mathbf k\times \Omega_i(\mathbf k)
+
+    where :math:`\Omega_i` is the Berry curvature for state :math:`i`.
+
+    References
+    ----------
+    .. [1] :doi:`X. Wang, J. R. Yates, I. Souza, D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", PRB **74**, 195118 (2006) <10.1103/PhysRevB.74.195118>`
 
     Returns
     -------
     numpy.ndarray
-        velocity matrixstate with final dimension ``(state.shape[0], state.shape[0], 3)``, the velocity unit is Ang/ps. Units *may* change in future releases.
+        velocity matrix state with final dimension ``(state.shape[0], state.shape[0], 3)``, the velocity unit is Ang/ps. Units *may* change in future releases.
     """
     if state.ndim == 1:
         return velocity_matrix(state.reshape(1, -1), dHk, energy, dSk, degenerate, degenerate_dir)
@@ -699,7 +810,8 @@ def _velocity_matrix_ortho(state, dHk, degenerate, degenerate_dir, dtype):
 
 
 @set_module("sisl.physics.electron")
-def berry_curvature(state, energy, dHk, dSk=None, degenerate=None, degenerate_dir=(1, 1, 1), complex=False):
+def berry_curvature(state, energy, dHk, dSk=None,
+                    degenerate=None, degenerate_dir=(1, 1, 1)):
     r""" Calculate the Berry curvature matrix for a set of states (using Kubo)
 
     The Berry curvature is calculated using the following expression
@@ -707,12 +819,9 @@ def berry_curvature(state, energy, dHk, dSk=None, degenerate=None, degenerate_di
 
     .. math::
 
-       \boldsymbol\Omega_{n,\alpha\beta} = - \frac2\hbar^2\Im\sum_{m\neq n}
-                \frac{v_{nm,\alpha} v_{mn,\beta}}
-                     {[\epsilon_m - \epsilon_n]^2}
-
-    Note that this method optionally returns the complex valued equivalent of the above.
-    I.e. :math:`\Im` is not applied if `complex` is true.
+       \boldsymbol\Omega_{i,\alpha\beta} = - \frac2{\hbar^2}\Im\sum_{j\neq i}
+                \frac{v^\alpha_{ij} v^\beta_{ji}}
+                     {[\epsilon_j - \epsilon_i]^2}
 
     For details see Eq. (11) in [1]_ or Eq. (2.59) in [2]_.
 
@@ -736,30 +845,26 @@ def berry_curvature(state, energy, dHk, dSk=None, degenerate=None, degenerate_di
        is required to decouple them.
     degenerate_dir : (3,), optional
        along which direction degenerate states are decoupled.
-    complex : logical, optional
-       whether the returned quantity is complex valued (i.e. not *only* the imaginary part is returned)
 
     See Also
     --------
     velocity : calculate state velocities
     velocity_matrix : calculate state velocities between all states
+    Hamiltonian.dHk : function for generating the Hamiltonian derivatives (`dHk` argument)
+    Hamiltonian.dSk : function for generating the Hamiltonian derivatives (`dSk` argument)
 
     References
     ----------
-    .. [1] X. Wang, J. R. Yates, I. Souza, D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", PRB, *74*, 195118 (2006)
-    .. [2] J. K. Asboth, L. Oroslany, A. Palyi, "A Short Course on Topological Insulators", arXiv *1509.02295* (2015).
+    .. [1] :doi:`X. Wang, J. R. Yates, I. Souza, D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", PRB **74**, 195118 (2006) <10.1103/PhysRevB.74.195118>`
+    .. [2] :doi:`J. K. Asboth, L. Oroslany, A. Palyi, "A Short Course on Topological Insulators", arXiv *1509.02295* (2015) <10.1007/978-3-319-25607-8>`
 
     Returns
     -------
     numpy.ndarray
-        Berry flux with final dimension ``(state.shape[0], 3, 3)`` (complex if `complex` is True).
+        Berry flux with final dimension ``(state.shape[0], 3, 3)``
     """
     if state.ndim == 1:
-        return berry_curvature(state.reshape(1, -1), energy, dHk, dSk, degenerate, degenerate_dir, complex)[0]
-
-    if degenerate is None:
-        # Fix following routine
-        degenerate = []
+        return berry_curvature(state.reshape(1, -1), energy, dHk, dSk, degenerate, degenerate_dir)[0]
 
     dtype = find_common_type([state.dtype, dHk[0].dtype, dtype_real_to_complex(state.dtype)], [])
     if dSk is None:
@@ -767,16 +872,14 @@ def berry_curvature(state, energy, dHk, dSk=None, degenerate=None, degenerate_di
     else:
         v_matrix = _velocity_matrix_non_ortho(state, dHk, energy, dSk, degenerate, degenerate_dir, dtype)
         warn("berry_curvature calculation for non-orthogonal basis sets are not tested! Do not expect this to be correct!")
-    if complex:
-        return _berry_curvature(v_matrix, energy, degenerate)
-    return _berry_curvature(v_matrix, energy, degenerate).imag
+    return _berry_curvature(v_matrix, energy)
 
 
 # This reverses the velocity unit (squared since Berry curvature is v.v)
 _berry_curvature_const = 1 / _velocity_const ** 2
 
 
-def _berry_curvature(v_M, energy, degenerate):
+def _berry_curvature(v_M, energy):
     r""" Calculate Berry curvature for a given velocity matrix """
 
     # All matrix elements along the 3 directions
@@ -785,41 +888,39 @@ def _berry_curvature(v_M, energy, degenerate):
     # to calculate anything. Hence we need to initialize as zero
     # This is a vector of matrices
     #   \Omega_{n, \alpha \beta}
-    sigma = np.zeros([N, 3, 3], dtype=dtype_real_to_complex(v_M.dtype))
+    sigma = np.zeros([N, 3, 3], dtype=dtype_complex_to_real(v_M.dtype))
 
-    # Fast index deletion
-    index = _a.arangei(N)
+    for s, e in enumerate(energy):
+        de = (energy - e) ** 2
+        # add factor 2 here, but omit the minus sign until later
+        # where we are forced to use the constant upon return anyways
+        np.divide(2, de, where=(de != 0), out=de)
 
-    for n in range(N):
+        # Calculate the berry-curvature
+        sigma[s] = ((de.reshape(-1, 1) * v_M[s]).T @ v_M[:, s]).imag
 
-        # Calculate the Berry-curvature from the velocity matrix
-        idx = index
-        for deg in degenerate:
-            if n in deg:
-                # We skip degenerate states as that would lead to overflow
-                idx = np.delete(index, deg)
-        if len(idx) == N:
-            idx = np.delete(index, n)
-
-        # Note we do not use an epsilon for accuracy
-        fac = - 2 / (energy[idx] - energy[n]) ** 2
-        sigma[n, :, :] = einsum("i,ij,il->jl", fac, v_M[idx, n], v_M[n, idx])
-
-    return sigma * _berry_curvature_const
+    # negative here
+    return sigma * (- _berry_curvature_const)
 
 
 @set_module("sisl.physics.electron")
-def conductivity(bz, distribution='fermi-dirac', method='ahc', degenerate_dir=(1, 1, 1), complex=False):
+def conductivity(bz, distribution="fermi-dirac", method="ahc",
+                 degenerate=1.e-5, degenerate_dir=(1, 1, 1),
+                 *,
+                 eigenstate_kwargs=None):
     r""" Electronic conductivity for a given `BrillouinZone` integral
 
-    Currently the *only* implemented method is the anomalous Hall conductivity (AHC)
+    Currently the *only* implemented method is the anomalous Hall conductivity (AHC, see [1]_)
     which may be calculated as:
 
     .. math::
-       \sigma_{\alpha\beta} = \frac{-e^2}{\hbar}\int\,\mathrm d\mathbf k\sum_nf_n(\mathbf k)\Omega_{n,\alpha\beta}(\mathbf k)
+       \sigma_{\alpha\beta} = \frac{-e^2}{\hbar}\int\,\mathrm d\mathbf k\sum_i f_i\Omega_{i,\alpha\beta}(\mathbf k)
 
-    where :math:`\Omega_{n,\alpha\beta}` is the Berry curvature for state :math:`n` and :math:`f_n` is
-    the occupation for state :math:`n`.
+    where :math:`\Omega_{i,\alpha\beta}` and :math:`f_i` is the Berry curvature and occupation
+    for state :math:`i`.
+
+    The conductivity will be averaged by the Brillouin zone volume of the parent. See `BrillouinZone.volume` for details.
+    Hence for 1D the returned unit will be S/Ang, 2D it will be S/Ang^2 and 3D it will be S/Ang^3.
 
     Parameters
     ----------
@@ -827,16 +928,30 @@ def conductivity(bz, distribution='fermi-dirac', method='ahc', degenerate_dir=(1
         containing the integration grid and has the ``bz.parent`` as an instance of Hamiltonian.
     distribution : str or func, optional
         distribution used to find occupations
-    method : {'ahc'}
-       'ahc' calculates the anomalous Hall conductivity
+    method : {"ahc"}
+       "ahc" calculates the dc anomalous Hall conductivity
+    degenerate : float, optional
+       de-couple degenerate states within the given tolerance (in eV)
     degenerate_dir : (3,), optional
        along which direction degenerate states are decoupled.
-    complex : logical, optional
-       whether the returned quantity is complex valued
+    eigenstate_kwargs : dict, optional
+       keyword arguments passed directly to the ``contour.eigenstate`` method.
+       One should *not* pass a ``k`` or a ``wrap`` keyword argument as they are
+       already used.
+
+    References
+    ----------
+    .. [1] :doi:`X. Wang, J. R. Yates, I. Souza, D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", PRB **74**, 195118 (2006) <10.1103/PhysRevB.74.195118>`
+
+    Returns
+    -------
+    cond : float
+        conductivity in units [S/cm^D]. The D is the dimensionality of the system.
 
     See Also
     --------
     berry_curvature: method used to calculate the Berry-flux for calculating the conductivity
+    BrillouinZone.volume: volume calculation of the Brillouin zone
     """
     from .hamiltonian import Hamiltonian
     # Currently we require the conductivity calculation to *only* accept Hamiltonians
@@ -846,14 +961,28 @@ def conductivity(bz, distribution='fermi-dirac', method='ahc', degenerate_dir=(1
     if isinstance(distribution, str):
         distribution = get_distribution(distribution)
 
+    if eigenstate_kwargs is None:
+        eigenstate_kwargs = {}
+
     method = method.lower()
-    if method == 'ahc':
+    if method == "ahc":
         def _ahc(es):
             occ = distribution(es.eig)
-            bc = es.berry_curvature(degenerate_dir=degenerate_dir, complex=complex)
-            return einsum('i,ijl->jl', occ, bc)
+            bc = es.berry_curvature(degenerate=degenerate, degenerate_dir=degenerate_dir)
+            return (bc.T @ occ).T
 
-        cond = - bz.apply.average.eigenstate(wrap=_ahc) / constant.hbar('eV ps')
+        vol, dim = bz.volume(ret_dim=True)
+
+        if dim == 0:
+            raise SislError(f"conductivity: found a dimensionality of 0 which is non-physical")
+
+        cond = bz.apply.average.eigenstate(**eigenstate_kwargs,
+                                           wrap=_ahc) * (-constant.G0 / (4*np.pi))
+
+        # Convert the dimensions from S/m^D to S/cm^D
+        cond /= vol * units(f"Ang^{dim}", f"cm^{dim}")
+        warn("conductivity: be aware that the units are currently not tested, please provide feedback!")
+
     else:
         raise SislError("conductivity: requires the method to be [ahc]")
 
@@ -861,165 +990,28 @@ def conductivity(bz, distribution='fermi-dirac', method='ahc', degenerate_dir=(1
 
 
 @set_module("sisl.physics.electron")
-def inv_eff_mass_tensor(state, ddHk, energy=None, ddSk=None, degenerate=None, as_matrix=False):
-    r""" Calculate the effective mass tensor for a set of states (missing off-diagonal terms)
-
-    These are calculated using the analytic expression (:math:`\alpha,\beta` corresponds to Cartesian directions):
-
-    .. math::
-
-        \mathbf M^{-1}_{i\alpha\beta} = \frac1{\hbar^2} \langle \psi_i |
-             \frac{\partial}{\partial\mathbf k}_\alpha\frac{\partial}{\partial\mathbf k}_\beta \mathbf H(\mathbf k)
-             | \psi_i \rangle
-
-    In case of non-orthogonal basis the equations substitutes :math:`\mathbf H(\mathbf k)` by
-    :math:`\mathbf H(\mathbf k) - \epsilon_i\mathbf S(\mathbf k)`.
-
-    The matrix :math:`\mathbf M` is known as the effective mass tensor, remark that this function returns the inverse
-    of :math:`\mathbf M`.
-
-    Currently this routine only returns the above quations, however, the inverse effective mass tensor
-    also has contributions from some off-diagonal elements, see [1]_.
-
-    Notes
-    -----
-    The reason for not inverting the mass-tensor is that for systems with limited
-    periodicities some of the diagonal elements of the inverse mass tensor matrix
-    will be 0, in which case the matrix is singular and non-invertible. Therefore
-    it is the users responsibility to remove any of the non-periodic elements from
-    the matrix before inverting.
-
-    Parameters
-    ----------
-    state : array_like
-       vectors describing the electronic states, 2nd dimension contains the states. In case of degenerate
-       states the vectors *may* be rotated upon return.
-    ddHk : (6,) of array_like
-       Hamiltonian double derivative with respect to :math:`\mathbf k`. The input must be in Voigt order.
-    energy : array_like, optional
-       energies of the states. Required for non-orthogonal basis together with `ddSk`. In case of degenerate
-       states the eigenvalues of the states will be averaged in the degenerate sub-space.
-    ddSk : (6,) of array_like, optional
-       overlap matrix required for non-orthogonal basis. This and `energy` *must* both be
-       provided when the states are defined in a non-orthogonal basis (otherwise the results will be wrong).
-       Same order as `ddHk`.
-    degenerate : list of array_like, optional
-       a list containing the indices of degenerate states. In that case a subsequent diagonalization
-       is required to decouple them. This is done 3 times along the diagonal Cartesian directions.
-    as_matrix : bool, optional
-       if true the returned tensor will be a symmetric matrix, otherwise the Voigt tensor is returned.
-
-    See Also
-    --------
-    velocity : band velocity
-
-    References
-    ----------
-    .. [1] J. R. Yates, X. Wang, D. Vanderbilt, I. Souza, "Spectral and Fermi surface properties from Wannier interpolation", PRB, *75*, 195121 (2007)
-
-    Returns
-    -------
-    numpy.ndarray
-        inverse effective mass tensor of each state in units of inverse electron mass
-    """
-    if state.ndim == 1:
-        return inv_eff_mass_tensor(state.reshape(1, -1), ddHk, energy, ddSk, degenerate, as_matrix)[0]
-
-    if ddSk is None:
-        return _inv_eff_mass_tensor_ortho(state, ddHk, degenerate, as_matrix)
-    return _inv_eff_mass_tensor_non_ortho(state, ddHk, energy, ddSk, degenerate, as_matrix)
-
-
-# inverse electron mass units in 1/m_e (atomic units)!
-# ddHk is in [Ang ^ 2 eV]
-_inv_eff_mass_const = units('Ang', 'Bohr') ** 2 * units('eV', 'Ha')
-
-
-def _inv_eff_mass_tensor_non_ortho(state, ddHk, energy, ddSk, degenerate, as_matrix):
-    r""" For states in a non-orthogonal basis """
-    if as_matrix:
-        M = np.empty([state.shape[0], 9], dtype=dtype_complex_to_real(state.dtype))
-    else:
-        M = np.empty([state.shape[0], 6], dtype=dtype_complex_to_real(state.dtype))
-
-    # Now decouple the degenerate states
-    if not degenerate is None:
-        for deg in degenerate:
-            e = np.average(energy[deg])
-            energy[deg] = e
-
-            # Now diagonalize to find the contributions from individual states
-            # then re-construct the seperated degenerate states
-            # We only do this along the double derivative directions
-            state[deg] = degenerate_decouple(state[deg], sum(ddh - e * dds for ddh, dds in zip(ddHk, ddSk)))
-
-    # Since they depend on the state energies and ddSk we have to loop them individually.
-    for s, e in enumerate(energy):
-
-        # Since ddHk *may* be a csr_matrix or sparse, we have to do it like
-        # this. A sparse matrix cannot be re-shaped with an extra dimension.
-        for i in range(6):
-            M[s, i] = conj(state[s]).dot((ddHk[i] - e * ddSk[i]).dot(state[s])).real
-
-    if as_matrix:
-        M[:, 8] = M[:, 2] # zz
-        M[:, 7] = M[:, 3] # zy
-        M[:, 6] = M[:, 4] # zx
-        M[:, 3] = M[:, 5] # xy
-        M[:, 5] = M[:, 7] # yz
-        M[:, 4] = M[:, 1] # yy
-        M[:, 1] = M[:, 3] # xy
-        M[:, 2] = M[:, 6] # zx
-        M.shape = (-1, 3, 3)
-
-    return M * _inv_eff_mass_const
-
-
-def _inv_eff_mass_tensor_ortho(state, ddHk, degenerate, as_matrix):
-    r""" For states in an orthogonal basis """
-
-    # Along all directions
-    if as_matrix:
-        M = np.empty([state.shape[0], 9], dtype=dtype_complex_to_real(state.dtype))
-    else:
-        M = np.empty([state.shape[0], 6], dtype=dtype_complex_to_real(state.dtype))
-
-    # Now decouple the degenerate states
-    if not degenerate is None:
-        for deg in degenerate:
-            # Now diagonalize to find the contributions from individual states
-            # then re-construct the seperated degenerate states
-            # We only do this along the double derivative directions
-            state[deg] = degenerate_decouple(state[deg], sum(ddHk))
-
-    for i in range(6):
-        M[:, i] = einsum('ij,ji->i', conj(state), ddHk[i].dot(state.T)).real
-
-    if as_matrix:
-        M[:, 8] = M[:, 2] # zz
-        M[:, 7] = M[:, 3] # zy
-        M[:, 6] = M[:, 4] # zx
-        M[:, 3] = M[:, 5] # xy
-        M[:, 5] = M[:, 7] # yz
-        M[:, 4] = M[:, 1] # yy
-        M[:, 1] = M[:, 3] # xy
-        M[:, 2] = M[:, 6] # zx
-        M.shape = (-1, 3, 3)
-
-    return M * _inv_eff_mass_const
-
-
-@set_module("sisl.physics.electron")
-def berry_phase(contour, sub=None, eigvals=False, closed=True, method='berry'):
-    r""" Calculate the Berry-phase on a loop using a predefined path
+def berry_phase(contour, sub=None, eigvals=False, closed=True, method="berry",
+                *,
+                eigenstate_kwargs=None, ret_overlap=False):
+    r""" Calculate the Berry-phase on a loop path
 
     The Berry phase for a single Bloch state is calculated using the discretized formula:
 
     .. math::
-       \phi = - \Im\ln \mathrm{det} \prod_i^{N-1} \langle \psi_{k_i} | \psi_{k_{i+1}} \rangle
+       \mathbf S = \prod_i^{N-1} \langle \psi_{k_i} | \psi_{k_{i+1}} \rangle
+       \\
+       \phi = - \Im\ln \mathrm{det} \mathbf S
 
     where :math:`\langle \psi_{k_i} | \psi_{k_{i+1}} \rangle` may be exchanged with an overlap matrix
-    of the investigated bands.
+    of the investigated bands. I.e. :math:`\psi` is a manifold set of wavefunctions.
+    The overlap matrix :math:`\mathbf S` is also known as the global unitary
+    rotation matrix corresponding to the maximally localized Wannier centers.
+
+    If `closed` is true the overlap matrix will also include the circular inner product:
+
+    .. math::
+       \mathbf S^{\mathcal C} = \mathbf S \langle \psi_{k_N} | \psi_{k_1} \rangle
+
 
     Parameters
     ----------
@@ -1032,35 +1024,44 @@ def berry_phase(contour, sub=None, eigvals=False, closed=True, method='berry'):
        return the eigenvalues of the product of the overlap matrices
     closed : bool, optional
        whether or not to include the connection of the last and first points in the loop
-    method : {'berry', 'zak'}
-       'berry' will return the usual integral of the Berry connection over the specified contour
-       'zak' will compute the Zak phase for 1D systems by performing a closed loop integration but
-       taking into account the Bloch factor :math:`e^{i2\pi/a x}` accumulated over a Brillouin zone,
-       see [1]_.
+       Forced true for Zak-phase calculations.
+    method : {"berry", "zak"}
+       "berry" will return the usual integral of the Berry connection over the specified contour
+       "zak" will compute the Zak phase for 1D systems by performing
+       a closed loop integration, see [1]_.
+       Additionally, one may do the Berry-phase calculation using the SVD method of the
+       overlap matrices. Simply append ":svd" to the chosen method, e.g. "berry:svd".
+    eigenstate_kwargs : dict, optional
+       keyword arguments passed directly to the ``contour.eigenstate`` method.
+       One should *not* pass ``k`` as that is already used.
+    ret_overlap: bool, optional
+       optionally return the overlap matrix :math:`\mathbf S`
 
     Notes
     -----
     The Brillouin zone object *need* not contain a closed discretized contour by doubling the first point.
 
-    The implementation is very similar to PythTB and refer to the details outlined in PythTB for
-    additional details.
+    The implementation is very similar to PythTB, except we are here using the :math:`\mathbf R` gauge
+    (convention II according to PythTB), see discussion in :pull:`131`.
 
-    This implementation does not work for band-crossings or degenerate states. It is thus important that
-    eigenstates are corresponding to the same states for the loop contained in `bz`.
+    For systems with band-crossings or degenerate states there is an arbitrariness to the definition
+    of the Berry phase for *individual* bands. However, the total phase (i.e., sum over filled bands) is
+    invariant and unaffected by this arbitrariness as long as the filled and empty bands do not intersect,
+    see [2]_.
+
+    For non-orthogonal basis sets it is not fully known how important the :math:`\delta\mathbf k` spacing is since
+    it relies on the Lowdin transformation of the states. However, one should be careful about choosing
+    the correct bands for examination.
+
+    The returned angles are _not_ placed in the interval :math:`]-\pi;\pi]` as what `numpy.angle` would do.
+    This is to allow users to examine the quantities as is.
+
+    For more understanding of the Berry-phase and its calculation [3]_ is a good reference.
 
     Examples
     --------
 
-    Calculate the multi-band Berry-phase
-
-    >>> N = 30
-    >>> kR = 0.01
-    >>> normal = [0, 0, 1]
-    >>> origin = [1/3, 2/3, 0]
-    >>> bz = BrillouinZone.param_circle(H, N, kR, normal, origin)
-    >>> phase = berry_phase(bz)
-
-    Calculate Berry-phase for first band
+    Calculate Berry-phase for first band but using the SVD method
 
     >>> N = 30
     >>> kR = 0.01
@@ -1069,24 +1070,44 @@ def berry_phase(contour, sub=None, eigvals=False, closed=True, method='berry'):
     >>> bz = BrillouinZone.param_circle(H, N, kR, normal, origin)
     >>> phase = berry_phase(bz, sub=0)
 
+    Calculate the multi-band Berry-phase using the SVD method, thus
+    ensuring removal of singular vectors.
+
+    >>> N = 30
+    >>> kR = 0.01
+    >>> normal = [0, 0, 1]
+    >>> origin = [1/3, 2/3, 0]
+    >>> bz = BrillouinZone.param_circle(H, N, kR, normal, origin)
+    >>> phase = berry_phase(bz, method="berry:svd")
+
     References
     ----------
-    .. [1] J. Zak, "Berry's phase for energy bands in solids", PRL, *62*, 2747 (1989)
+    .. [1] :doi:`J. Zak, "Berry's phase for energy bands in solids", PRL **62**, 2747 (1989) <10.1103/PhysRevLett.62.2747>`
+    .. [2] :doi:`R. Resta, "Manifestations of Berry's phase in molecules and condensed matter", JPCM **12**, R107 (2000) <10.1088/0953-8984/12/9/201>`
+    .. [3] :doi:`Tutorial: Computing Topological Invariants in 2D Photonic Crystals <10.1002/qute.201900117>`
     """
     from .hamiltonian import Hamiltonian
     # Currently we require the Berry phase calculation to *only* accept Hamiltonians
     if not isinstance(contour.parent, Hamiltonian):
         raise SislError("berry_phase: requires the Brillouin zone object to contain a Hamiltonian!")
-    spin = contour.parent.spin
 
-    if not contour.parent.orthogonal:
-        raise SislError("berry_phase: requires the Hamiltonian to use an orthogonal basis!")
+    if eigenstate_kwargs is None:
+        eigenstate_kwargs = {}
 
-    if np.allclose(contour.k[0, :], contour.k[-1, :]):
-        # When the user has the contour points closed, we don't need to do this in the below loop
-        closed = False
+    if contour.parent.orthogonal:
+        def _lowdin(state):
+            pass
+    else:
+        gauge = eigenstate_kwargs.get("gauge", "R")
+        def _lowdin(state):
+            """ change state to the lowdin state, assuming everything is in R gauge
+            So needs to be done before changing gauge """
+            S12 = sqrth(state.parent.Sk(state.info["k"],
+                                        gauge=gauge, format="array"),
+                        overwrite_a=True)
+            state.state[:, :] = (S12 @ state.state.T).T
 
-    method = method.lower()
+    method, *opts = method.lower().split(":")
     if method == "berry":
         pass
     elif method == "zak":
@@ -1094,21 +1115,19 @@ def berry_phase(contour, sub=None, eigvals=False, closed=True, method='berry'):
     else:
         raise ValueError("berry_phase: requires the method to be [berry, zak]")
 
-    # Whether we should calculate the eigenvalues of the overlap matrix
-    if eigvals:
-        # We calculate the final eigenvalues
-        def _process(prd, ovr):
-            U, _, V = svd_destroy(ovr)
-            return dot(prd, dot(U, V))
-    else:
-        # We calculate the final angle from the determinant
-        _process = dot
+    # We calculate the final angle from the determinant
+    _process = dot
+
+    if "svd" in opts:
+        def _process(prd, overlap):
+            U, _, V = svd_destroy(overlap)
+            return dot(prd, U @ V)
 
     if sub is None:
         def _berry(eigenstates):
             # Grab the first one to be able to form a loop
             first = next(eigenstates)
-            first.change_gauge('r')
+            _lowdin(first)
             # Create a variable to keep track of the previous state
             prev = first
 
@@ -1118,63 +1137,48 @@ def berry_phase(contour, sub=None, eigvals=False, closed=True, method='berry'):
 
             # Loop remaining eigenstates
             for second in eigenstates:
-                second.change_gauge('r')
+                _lowdin(second)
                 prd = _process(prd, prev.inner(second, diag=False))
                 prev = second
 
             # Complete the loop
             if closed:
-                # Insert Bloch phase for 1D integral?
-                if method == "zak":
-                    g = contour.parent.geometry
-                    axis = contour.k[1] - contour.k[0]
-                    axis /= axis.dot(axis) ** 0.5
-                    phase = dot(g.xyz[g.o2a(_a.arangei(g.no)), :], dot(axis, g.rcell)).reshape(1, -1)
-                    if spin.is_diagonal:
-                        prev.state *= exp(1j * phase)
-                    else:
-                        # for NC/SOC we have a 2x2 spin-box per orbital
-                        prev.state *= np.repeat(exp(1j * phase), 2, axis=1)
-
                 # Include last-to-first segment
                 prd = _process(prd, prev.inner(first, diag=False))
             return prd
 
     else:
         def _berry(eigenstates):
-            first = next(eigenstates).sub(sub)
-            first.change_gauge('r')
+            nonlocal sub
+            first = next(eigenstates)
+            first.sub(sub, inplace=True)
+            _lowdin(first)
             prev = first
             prd = 1
             for second in eigenstates:
-                second = second.sub(sub)
-                second.change_gauge('r')
+                second.sub(sub, inplace=True)
+                _lowdin(second)
                 prd = _process(prd, prev.inner(second, diag=False))
                 prev = second
             if closed:
-                if method == "zak":
-                    g = contour.parent.geometry
-                    axis = contour.k[1] - contour.k[0]
-                    axis /= axis.dot(axis) ** 0.5
-                    phase = dot(g.xyz[g.o2a(_a.arangei(g.no)), :], dot(axis, g.rcell)).reshape(1, -1)
-                    if spin.is_diagonal:
-                        prev.state *= exp(1j * phase)
-                    else:
-                        # for NC/SOC we have a 2x2 spin-box per orbital
-                        prev.state *= np.repeat(exp(1j * phase), 2, axis=1)
                 prd = _process(prd, prev.inner(first, diag=False))
             return prd
 
-    # Do the actual calculation of the final matrix
-    d = _berry(contour.apply.iter.eigenstate())
+    S = _berry(contour.apply.iter.eigenstate(**eigenstate_kwargs))
 
-    # Correct return values
+    # Get the angle of the berry-phase
+    # When using np.angle the returned value is in ]-pi; pi]
+    # However, small numerical differences makes wrap-arounds annoying.
+    # We'll always return the full angle. Then users can them-selves control
+    # how to convert them.
     if eigvals:
-        ret = -angle(eigvals_destroy(d))
+        ret = -log(la_eigvals(S, overwrite_a=not ret_overlap)).imag
         ret = sort(ret)
     else:
-        ret = -angle(det_destroy(d))
+        ret = -log(det(S, overwrite_a=not ret_overlap)).imag
 
+    if ret_overlap:
+        return ret, S
     return ret
 
 
@@ -1212,7 +1216,7 @@ def wavefunction(v, grid, geometry=None, k=None, spinor=0, spin=None, eta=None):
 
     Notes
     -----
-    Currently this method only works for `v` being coefficients of the gauge='R' method. In case
+    Currently this method only works for `v` being coefficients of the gauge="R" method. In case
     you are passing a `v` with the incorrect gauge you will find a phase-shift according to:
 
     .. math::
@@ -1249,6 +1253,15 @@ def wavefunction(v, grid, geometry=None, k=None, spinor=0, spin=None, eta=None):
     eta : bool, optional
        Display a console progressbar.
     """
+    # Decipher v from State type
+    if isinstance(v, State):
+        if geometry is None:
+            geometry = v.parent.geometry
+        if k is None:
+            k = v.info.get("k", k)
+        elif not np.allclose(k, v.info.get("k", k)):
+            raise ValueError(f"wavefunction: k passed and k in info does not match: {k} and {v.info.get('k')}")
+        v = v.state
     if geometry is None:
         geometry = grid.geometry
     if geometry is None:
@@ -1281,7 +1294,7 @@ def wavefunction(v, grid, geometry=None, k=None, spinor=0, spin=None, eta=None):
     kl = k.dot(k) ** 0.5
     has_k = kl > 0.000001
     if has_k:
-        info('wavefunction: k != Gamma is currently untested!')
+        info("wavefunction: k != Gamma is currently untested!")
 
     # Check that input/grid makes sense.
     # If the coefficients are complex valued, then the grid *has* to be
@@ -1308,7 +1321,7 @@ def wavefunction(v, grid, geometry=None, k=None, spinor=0, spin=None, eta=None):
 
     # In the following we don't care about division
     # So 1) save error state, 2) turn off divide by 0, 3) calculate, 4) turn on old error state
-    old_err = np.seterr(divide='ignore', invalid='ignore')
+    old_err = np.seterr(divide="ignore", invalid="ignore")
 
     addouter = add.outer
     def idx2spherical(ix, iy, iz, offset, dc, R):
@@ -1522,13 +1535,14 @@ def wavefunction(v, grid, geometry=None, k=None, spinor=0, spin=None, eta=None):
 
 
 class _electron_State:
+    # pylint: disable=E1101
     __slots__ = []
 
     def __is_nc(self):
         """ Internal routine to check whether this is a non-colinear calculation """
         try:
             return not self.parent.spin.is_diagonal
-        except:
+        except Exception:
             return False
 
     def Sk(self, format=None, spin=None):
@@ -1552,7 +1566,7 @@ class _electron_State:
         if isinstance(self.parent, SparseOrbitalBZSpin):
             # Calculate the overlap matrix
             if not self.parent.orthogonal:
-                opt = {'k': self.info.get('k', (0, 0, 0)),
+                opt = {"k": self.info.get("k", (0, 0, 0)),
                        "dtype": self.dtype,
                        "format": format}
                 for key in ("gauge",):
@@ -1565,8 +1579,12 @@ class _electron_State:
             n = self.shape[1] // 2
         else:
             n = self.shape[1]
+        if "sc:" in format:
+            m = n * self.parent.n_s
+        else:
+            m = n
 
-        return _FakeMatrix(n)
+        return _FakeMatrix(n, m)
 
     def norm2(self, sum=True):
         r""" Return a vector with the norm of each state :math:`\langle\psi|\mathbf S|\psi\rangle`
@@ -1585,40 +1603,12 @@ class _electron_State:
         numpy.ndarray
             the squared norm for each state
         """
-        if sum:
-            return self.inner()
-
         # Retrieve the overlap matrix (FULL S is required for NC)
         S = self.Sk()
+
+        if sum:
+            return self.inner(matrix=S)
         return conj(self.state) * S.dot(self.state.T).T
-
-    def inner(self, ket=None, matrix=None, diag=True):
-        r""" Calculate the inner product by :math:`\mathbf A_{ij} = \langle\psi_i| \mathbf M |\psi'_j\rangle`
-
-        The bra will be `self.state`.
-
-        Parameters
-        ----------
-        ket : State or array_like, optional
-           the ket object to calculate the inner product with, if not passed it will do the inner
-           product with itself.
-        matrix : array_like, optional
-           a vector or matrix that expresses the operator `M`. Defaults to the overlap matrix :math:`\mathbf S`.
-        diag : bool, optional
-           only return the diagonal matrix :math:`\mathbf A_{ii}`.
-
-        Returns
-        -------
-        numpy.ndarray
-            a matrix with the sum of inner state products
-        """
-        if matrix is None:
-            # Retrieve the overlap matrix (FULL S is required for NC)
-            matrix = self.Sk()
-            if ket is not None and not isinstance(matrix, _FakeMatrix):
-                warn(f"{self.__class__.__name__}.inner uses an overlap matrix that may be incompatible with your ket states, please be aware of this!")
-
-        return super().inner(ket, matrix, diag)
 
     def spin_moment(self, project=False):
         r""" Calculate spin moment from the states
@@ -1649,10 +1639,10 @@ class _electron_State:
             geometry = getattr(self.parent, "geometry", None)
 
         # Ensure we are dealing with the R gauge
-        self.change_gauge('R')
+        self.change_gauge("R")
 
         # Retrieve k
-        k = self.info.get('k', _a.zerosd(3))
+        k = self.info.get("k", _a.zerosd(3))
 
         wavefunction(self.state, grid, geometry=geometry, k=k, spinor=spinor, spin=spin, eta=eta)
 
@@ -1674,181 +1664,74 @@ class StateCElectron(_electron_State, StateC):
     r""" A state describing a physical quantity related to electrons, with associated coefficients of the state """
     __slots__ = []
 
-    def velocity(self, eps=1e-4, degenerate_dir=(1, 1, 1), project=False):
+    def velocity(self, *args, **kwargs):
         r""" Calculate velocity for the states
 
-        This routine calls `~sisl.physics.electron.velocity` with appropriate arguments
-        and returns the velocity for the states. I.e. for non-orthogonal basis the overlap
-        matrix and energy values are also passed.
+        This routine calls ``derivative(1, *args, **kwargs)`` and returns the velocity for the states.
 
         Note that the coefficients associated with the `StateCElectron` *must* correspond
         to the energies of the states.
-
-        See `~sisl.physics.electron.velocity` for details.
-
-        Parameters
-        ----------
-        eps : float, optional
-           precision used to find degenerate states.
-        degenerate_dir: (3,), optional
-           which direction is used to decouple the degenerate states.
-        project : bool, optional
-           whether to return projected velocities (per orbital), see `velocity` for details
-
-        See Also
-        --------
-        PDOS : for an explanation of the projections in case of `project` being True
-        """
-        try:
-            opt = {'k': self.info.get('k', (0, 0, 0)), "dtype": self.dtype}
-            for key in ("gauge", "format"):
-                val = self.info.get(key, None)
-                if not val is None:
-                    opt[key] = val
-
-            # Get dSk before spin
-            if self.parent.orthogonal:
-                dSk = None
-            else:
-                dSk = self.parent.dSk(**opt)
-
-            if "spin" in self.info:
-                opt["spin"] = self.info["spin"]
-            deg = self.degenerate(eps)
-        except:
-            raise SislError(f"{self.__class__.__name__}.velocity requires the parent to have a spin associated.")
-        return velocity(self.state, self.parent.dHk(**opt), self.c, dSk,
-                        degenerate=deg, degenerate_dir=degenerate_dir, project=project)
-
-    def velocity_matrix(self, eps=1e-4, degenerate_dir=(1, 1, 1)):
-        r""" Calculate velocity matrix for the states
-
-        This routine calls `~sisl.physics.electron.velocity_matrix` with appropriate arguments
-        and returns the velocity for the states. I.e. for non-orthogonal basis the overlap
-        matrix and energy values are also passed.
-
-        Note that the coefficients associated with the `StateCElectron` *must* correspond
-        to the energies of the states.
-
-        See `~sisl.physics.electron.velocity_matrix` for details.
-
-        Parameters
-        ----------
-        eps : float, optional
-           precision used to find degenerate states.
-        degenerate_dir: (3,), optional
-           which direction is used to decouple the degenerate states.
-        """
-        try:
-            opt = {'k': self.info.get('k', (0, 0, 0)), "dtype": self.dtype}
-            for key in ("gauge", "format"):
-                val = self.info.get(key, None)
-                if not val is None:
-                    opt[key] = val
-
-            # Get dSk before spin
-            if self.parent.orthogonal:
-                dSk = None
-            else:
-                dSk = self.parent.dSk(**opt)
-
-            if "spin" in self.info:
-                opt["spin"] = self.info["spin"]
-            deg = self.degenerate(eps)
-        except:
-            raise SislError(f"{self.__class__.__name__}.velocity_matrix requires the parent to have a spin associated.")
-        return velocity_matrix(self.state, self.parent.dHk(**opt), self.c, dSk,
-                               degenerate=deg, degenerate_dir=degenerate_dir)
-
-    def berry_curvature(self, complex=False, eps=1e-4, degenerate_dir=(1, 1, 1)):
-        r""" Calculate Berry curvature for the states
-
-        This routine calls `~sisl.physics.electron.berry_curvature` with appropriate arguments
-        and returns the Berry curvature for the states.
-
-        Note that the coefficients associated with the `StateCElectron` *must* correspond
-        to the energies of the states.
-
-        See `~sisl.physics.electron.berry_curvature` for details.
-
-        Parameters
-        ----------
-        complex : logical, optional
-           whether the returned quantity is complex valued
-        eps : float, optional
-           precision used to find degenerate states.
-        degenerate_dir: (3,), optional
-           which direction is used to decouple the degenerate states.
-        """
-        try:
-            opt = {'k': self.info.get('k', (0, 0, 0)), "dtype": self.dtype}
-            for key in ("gauge", "format"):
-                val = self.info.get(key, None)
-                if not val is None:
-                    opt[key] = val
-
-            # Get dSk before spin
-            if self.parent.orthogonal:
-                dSk = None
-            else:
-                dSk = self.parent.dSk(**opt)
-
-            if "spin" in self.info:
-                opt["spin"] = self.info["spin"]
-            deg = self.degenerate(eps)
-        except:
-            raise SislError(f"{self.__class__.__name__}.berry_curvature requires the parent to have a spin associated.")
-        return berry_curvature(self.state, self.c, self.parent.dHk(**opt), dSk, degenerate=deg, degenerate_dir=degenerate_dir, complex=complex)
-
-    def inv_eff_mass_tensor(self, as_matrix=False, eps=1e-3):
-        r""" Calculate inverse effective mass tensor for the states
-
-        This routine calls `~sisl.physics.electron.inv_eff_mass` with appropriate arguments
-        and returns the state inverse effective mass tensor. I.e. for non-orthogonal basis the overlap
-        matrix and energy values are also passed.
-
-        Note that the coefficients associated with the `StateCElectron` *must* correspond
-        to the energies of the states.
-
-        See `~sisl.physics.electron.inv_eff_mass_tensor` for details.
 
         Notes
         -----
-        The reason for not inverting the mass-tensor is that for systems with limited
-        periodicities some of the diagonal elements of the inverse mass tensor matrix
-        will be 0, in which case the matrix is singular and non-invertible. Therefore
-        it is the users responsibility to remove any of the non-periodic elements from
-        the matrix.
+        The states and energies for the states *may* have changed after calling this routine.
+        This is because of the velocity un-folding for degenerate modes. I.e. calling
+        `displacement` and/or `PDOS` after this method *may* change the result.
 
-        Parameters
-        ----------
-        as_matrix : bool, optional
-           if true the returned tensor will be a symmetric matrix, otherwise the Voigt tensor is returned.
-        eps : float, optional
-           precision used to find degenerate states.
+        See Also
+        --------
+        derivative : for details of the implementation
         """
-        try:
-            # Ensure we are dealing with the r gauge
-            self.change_gauge('r')
+        return self.derivative(1, *args, **kwargs).real * _velocity_const
 
-            opt = {'k': self.info.get('k', (0, 0, 0)), "dtype": self.dtype}
-            for key in ("gauge", "format"):
-                val = self.info.get(key, None)
-                if not val is None:
-                    opt[key] = val
+    def berry_curvature(self, *args, **kwargs):
+        r""" Calculate Berry curvature for the states
 
-            # Get dSk before spin
-            if self.parent.orthogonal:
-                ddSk = None
-            else:
-                ddSk = self.parent.ddSk(**opt)
+        This routine calls ``derivative(1, *args, **kwargs, matrix=True)`` and
+        returns the Berry curvature for the states.
 
-            if "spin" in self.info:
-                opt["spin"] = self.info["spin"]
-            degenerate = self.degenerate(eps)
-        except:
-            raise SislError(f"{self.__class__.__name__}.inv_eff_mass_tensor requires the parent to have a spin associated.")
-        return inv_eff_mass_tensor(self.state, self.parent.ddHk(**opt), self.c, ddSk, degenerate, as_matrix)
+        Note that the coefficients associated with the `StateCElectron` *must* correspond
+        to the energies of the states.
+
+        See Also
+        --------
+        derivative : for details of the velocity matrix calculation implementation
+        sisl.physics.electron.berry_curvature : for details of the Berry curvature implementation
+        """
+        v = self.derivative(1, *args, **kwargs, matrix=True)
+        return _berry_curvature(v, self.c)
+
+    def effective_mass(self, *args, **kwargs):
+        r""" Calculate effective mass tensor for the states
+
+        This routine calls ``derivative(2, *args, **kwargs)`` and
+        returns the effective mass for all states.
+
+        Note that the coefficients associated with the `StateCElectron` *must* correspond
+        to the energies of the states.
+
+        Notes
+        -----
+        Since some directions may not be periodic there will be zeros. This routine will
+        invert elements where the values are different from 0.
+
+        It is not advisable to use a `sub` before calculating the effective mass
+        since the 1st order perturbation uses the energy differences and the 1st derivative
+        matrix for correcting the curvature.
+
+        The returned effective mass is given in the Voigt notation.
+
+        For :math:`\Gamma` point calculations it may be beneficial to pass `dtype=np.complex128`
+        to the `eigenstate` argument to ensure their complex values. This is necessary for the
+        degeneracy decoupling.
+
+        See Also
+        --------
+        derivative: for details of the implementation
+        """
+        ieff = self.derivative(2, *args, **kwargs)[1].real
+        np.divide(_velocity_const ** 2, ieff, where=(ieff != 0), out=ieff)
+        return ieff
 
 
 @set_module("sisl.physics.electron")
@@ -1951,3 +1834,28 @@ class EigenstateElectron(StateCElectron):
         See `~sisl.physics.electron.PDOS` for argument details.
         """
         return PDOS(E, self.c, self.state, self.Sk(), distribution, getattr(self.parent, "spin", None))
+
+    def COP(self, M, E, distribution="gaussian"):
+        r""" Calculate COP for provided energies, `E` using matrix `M`
+
+        This routine calls `~sisl.physics.electron.COP` with appropriate arguments.
+        """
+        return COP(E, self.c, self.state, M, distribution)
+
+    def COOP(self, E, distribution="gaussian"):
+        r""" Calculate COOP for provided energies, `E`.
+
+        This routine calls `~sisl.physics.electron.COP` with appropriate arguments.
+        """
+        # Get Sk in full format
+        Sk = self.Sk(format="sc:csr")
+        return COP(E, self.c, self.state, Sk, distribution)
+
+    def COHP(self, E, distribution="gaussian"):
+        r""" Calculate COHP for provided energies, `E`.
+
+        This routine calls `~sisl.physics.electron.COP` with appropriate arguments.
+        """
+        # Get Hk in full format
+        Hk = self.parent.Hk(format="sc:csr")
+        return COP(E, self.c, self.state, Hk, distribution)

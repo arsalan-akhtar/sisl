@@ -4,11 +4,10 @@
 import numpy as np
 
 # Import sile objects
-from ..sile import add_sile, sile_raise_write, SileWarning
-from .sile import SileCDFTBtrans
 from sisl._internal import set_module
-from sisl.utils import *
 import sisl._array as _a
+from ..sile import add_sile, sile_raise_write, SileError
+from .sile import SileCDFTBtrans
 
 # Import the geometry object
 from sisl import Geometry, Atom, SuperCell
@@ -71,7 +70,7 @@ class deltancSileTBtrans(SileCDFTBtrans):
         sc = SuperCell(cell, nsc=nsc)
         try:
             sc.sc_off = self._value('isc_off')
-        except:
+        except Exception:
             # This is ok, we simply do not have the supercell offsets
             pass
 
@@ -206,7 +205,7 @@ class deltancSileTBtrans(SileCDFTBtrans):
 
         try:
             lvl = self._get_lvl(ilvl)
-        except:
+        except Exception:
             return ilvl, -1, -1
 
         # Now determine the energy and k-indices
@@ -230,14 +229,14 @@ class deltancSileTBtrans(SileCDFTBtrans):
         return ilvl, ik, iE
 
     def _get_lvl(self, ilvl):
-        slvl = 'LEVEL-'+str(ilvl)
+        slvl = f'LEVEL-{ilvl}'
         if slvl in self.groups:
             return self._crt_grp(self, slvl)
         raise ValueError(f"Level {ilvl} does not exist in {self.file}.")
 
     def _add_lvl(self, ilvl):
         """ Simply adds and returns a group if it does not exist it will be created """
-        slvl = 'LEVEL-' + str(ilvl)
+        slvl = f'LEVEL-{ilvl}'
         if slvl in self.groups:
             lvl = self._crt_grp(self, slvl)
         else:
@@ -278,7 +277,7 @@ class deltancSileTBtrans(SileCDFTBtrans):
         """
         csr = delta._csr.copy()
         if csr.nnz == 0:
-            raise SileError(f"{str(self)}.write_overlap cannot write a zero element sparse matrix!")
+            raise SileError(f"{self!s}.write_overlap cannot write a zero element sparse matrix!")
 
         # convert to siesta thing and store
         _csr_to_siesta(delta.geometry, csr)
@@ -346,7 +345,8 @@ class deltancSileTBtrans(SileCDFTBtrans):
             # point, this warning will proceed...
             # I.e. even though the variable has not been set, it will WARN
             # Hence we out-comment this for now...
-            warn(f"Overwriting k-point {ik} and energy point {iE} correction.")
+            #warn(f"Overwriting k-point {ik} and energy point {iE} correction.")
+            pass
         elif ilvl == 3 and warn_E:
             warn(f"Overwriting energy point {iE} correction.")
         elif ilvl == 2 and warn_k:

@@ -45,19 +45,22 @@ Advanced classes
 __author__ = "Nick Papior"
 __license__ = "MPL-2.0"
 
-from . import _environ
+import sisl._version as _version
+__version__ = _version.version
+__version_tuple__ = _version.version_tuple
+__bibtex__ = f"""# BibTeX information if people wish to cite
+@misc{{zerothi_sisl,
+    author = {{Papior, Nick}},
+    title  = {{sisl: v{__version__}}},
+    year   = {{2021}},
+    doi    = {{10.5281/zenodo.597181}},
+    url    = {{https://doi.org/10.5281/zenodo.597181}},
+}}"""
 
-# Import bibtex, version string and the major, minor, micro as well
-from . import info
-from .info import (
-    bibtex as __bibtex__,
-    git_revision as __git_revision__,
-    version as __version__,
-    major as __major__,
-    minor as __minor__,
-    micro as __micro__,
-    cite
-)
+# do not expose this helper package
+del _version
+
+import sisl._environ as _environ
 
 # import the common options used
 from ._common import *
@@ -82,21 +85,21 @@ from .messages import SislDeprecation
 # The unit contain the SI standard conversions using
 # all digits (not program specific)
 from .unit import unit_group, unit_convert, unit_default, units
-from . import unit
+import sisl.unit as unit
 
 # Import numerical constants (they required unit)
-from . import constant
+import sisl.constant as constant
 # To make it easier to type ;)
 C = constant
 
 # Specific linear algebra
-from . import linalg
+import sisl.linalg as linalg
 
 # Utilities
-from . import utils
+import sisl.utils as utils
 
 # Mixing
-from . import mixing
+import sisl.mixing as mixing
 
 # Below are sisl-specific imports
 from .quaternion import *
@@ -124,7 +127,7 @@ from .physics import *
 #  sisl.get_sile
 # This will reduce the cluttering of the separate entities
 # that sisl is made of.
-from . import io
+import sisl.io as io
 from .io.sile import (
     add_sile, get_sile_class, get_sile,
     get_siles, get_sile_rules, SileError,
@@ -136,20 +139,16 @@ from .io.sile import (
 # We have to do it after loading BaseSile and Geometry
 # Since __getitem__ always instantiate the class, we have to use the
 # contained lookup table.
-Geometry.new.register(BaseSile, Geometry.new._dispatchs[str].__class__)
+Geometry.new.register(BaseSile, Geometry.new._dispatchs[str])
 
 # Import the default geom structure
 # This enables:
 # import sisl
 # sisl.geom.graphene
-from . import geom
+import sisl.geom as geom
 
 if _environ.get_environ_variable("SISL_VIZ_AUTOLOAD"):
     from . import viz
 
-
 # Make these things publicly available
 __all__ = [s for s in dir() if not s.startswith('_')]
-__all__ += [f'__{s}__' for s in ['bibtex', 'version', 'major', 'minor', 'micro']]
-__all__ += [f'__{s}__' for s in ['git_revision']]
-__all__ += [f'__{s}__' for s in ['author', 'license']]

@@ -59,7 +59,7 @@ def _pool_procs(pool):
     if pool is False or pool is None:
         return None
     elif pool is True:
-        nprocs = get_environ_variable("SISL_NPROCS")
+        nprocs = get_environ_variable("SISL_NUM_PROCS")
         if nprocs <= 1:
             return None
         import pathos as pos
@@ -187,7 +187,7 @@ class ListApply(IteratorApply):
     def dispatch(self, method):
         """ Dispatch the method by returning list of values """
         iter_func = super().dispatch(method, eta_key="list")
-        if self._attrs.get("unzip", False):
+        if self._attrs.get("zip", self._attrs.get("unzip", False)):
             @wraps(method)
             def func(*args, **kwargs):
                 return zip(*(v for v in iter_func(*args, **kwargs)))
@@ -206,7 +206,7 @@ class OpListApply(IteratorApply):
     def dispatch(self, method):
         """ Dispatch the method by returning oplist of values """
         iter_func = super().dispatch(method, eta_key="oplist")
-        if self._attrs.get("unzip", False):
+        if self._attrs.get("zip", self._attrs.get("unzip", False)):
             @wraps(method)
             def func(*args, **kwargs):
                 return oplist(zip(*(v for v in iter_func(*args, **kwargs))))
@@ -225,7 +225,7 @@ class NDArrayApply(BrillouinZoneParentApply):
     def dispatch(self, method, eta_key="ndarray"):
         """ Dispatch the method by one array """
         pool = _pool_procs(self._attrs.get("pool", None))
-        unzip = self._attrs.get("unzip", False)
+        unzip = self._attrs.get("zip", self._attrs.get("unzip", False))
 
         def _create_v(nk, v):
             out = np.empty((nk, *v.shape), dtype=v.dtype)
@@ -377,7 +377,7 @@ class XArrayApply(NDArrayApply):
             return coords, dims
 
         # Get data as array
-        if self._attrs.get("unzip", False):
+        if self._attrs.get("zip", self._attrs.get("unzip", False)):
             array_func = super().dispatch(method, eta_key="dataset")
 
             @wraps(method)
@@ -418,13 +418,17 @@ class XArrayApply(NDArrayApply):
         return func
 
 # Register dispatched functions
-BrillouinZone.apply.register("iter", IteratorApply, default=True)
-BrillouinZone.apply.register("average", AverageApply)
-BrillouinZone.apply.register("sum", SumApply)
-BrillouinZone.apply.register("array", NDArrayApply)
-BrillouinZone.apply.register("ndarray", NDArrayApply)
-BrillouinZone.apply.register("none", NoneApply)
-BrillouinZone.apply.register("list", ListApply)
-BrillouinZone.apply.register("oplist", OpListApply)
-BrillouinZone.apply.register("dataarray", XArrayApply)
-BrillouinZone.apply.register("xarray", XArrayApply)
+apply_dispatch = BrillouinZone.apply
+apply_dispatch.register("iter", IteratorApply, default=True)
+apply_dispatch.register("average", AverageApply)
+apply_dispatch.register("sum", SumApply)
+apply_dispatch.register("array", NDArrayApply)
+apply_dispatch.register("ndarray", NDArrayApply)
+apply_dispatch.register("none", NoneApply)
+apply_dispatch.register("list", ListApply)
+apply_dispatch.register("oplist", OpListApply)
+apply_dispatch.register("dataarray", XArrayApply)
+apply_dispatch.register("xarray", XArrayApply)
+
+# Remove refernce
+del apply_dispatch

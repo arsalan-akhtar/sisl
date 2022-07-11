@@ -16,6 +16,9 @@ from ._runner import AndRunner
 from ._minimize import *
 
 
+__all__ = ["MinimizeSiesta", "LocalMinimizeSiesta", "DualAnnealingMinimizeSiesta"]
+
+
 _log = logging.getLogger("sisl_toolbox.siesta.minimize")
 
 
@@ -42,7 +45,7 @@ class MinimizeSiesta(BaseMinimize): # no inheritance!
                 l = int(name[3])
                 zeta = int(zeta[1:])
                 return symbol, n, l, zeta
-            except:
+            except Exception:
                 return None, None, None, None
 
         orb_R = {} # (n,l) = {1: idx-nlzeta=1, 2: idx-nlzeta=2}

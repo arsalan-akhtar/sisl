@@ -82,7 +82,7 @@ class TestSuperCell:
         assert i.dtype == np.int32
         i = sc._fill([1., 1.])
         assert i.dtype == np.float64
-        for dt in [np.int32, np.int64, np.float32, np.float64, np.complex64]:
+        for dt in [np.int32, np.float32, np.float64, np.complex64]:
             i = sc._fill([1., 1.], dt)
             assert i.dtype == dt
             i = sc._fill(np.ones([2], dt))
@@ -166,8 +166,16 @@ class TestSuperCell:
         with pytest.raises(Exception):
             setup.sc.sc_index([100, 100, 100])
 
-    def test_cut1(self, setup):
-        cut = setup.sc.cut(2, 0)
+    def test_vertices(self, setup):
+        verts = setup.sc.vertices()
+
+        assert verts.shape == (2, 2, 2, 3)
+        assert np.allclose(verts[0, 0, 0], [0, 0, 0])
+        assert np.allclose(verts[1, 0, 0], setup.sc.cell[0])
+        assert np.allclose(verts[1, 1, 1], setup.sc.cell.sum(axis=0))
+
+    def test_untile1(self, setup):
+        cut = setup.sc.untile(2, 0)
         assert np.allclose(cut.cell[0, :] * 2, setup.sc.cell[0, :])
         assert np.allclose(cut.cell[1, :], setup.sc.cell[1, :])
 

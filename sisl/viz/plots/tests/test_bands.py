@@ -37,9 +37,13 @@ class TestBandsPlot(_TestPlot):
         return request.param
 
     @pytest.fixture(scope="class", params=[
+        # From .bands file
         "siesta_output",
+        # From a hamiltonian
         "sisl_H_unpolarized", "sisl_H_polarized", "sisl_H_noncolinear", "sisl_H_spinorbit",
         "sisl_H_path_unpolarized",
+        # From a .bands.WFSX file
+        "wfsx_file"
     ])
     def init_func_and_attrs(self, request, siesta_test_files):
         name = request.param
@@ -55,6 +59,20 @@ class TestBandsPlot(_TestPlot):
                 "spin_texture": False,
                 "spin": sisl.Spin("")
             }
+        elif name == "wfsx_file":
+            # From the SIESTA .bands.WFSX file
+            fdf = sisl.get_sile(siesta_test_files("bi2se3_3ql.fdf"))
+            wfsx = siesta_test_files("bi2se3_3ql.bands.WFSX")
+            init_func = partial(fdf.plot.bands, wfsx_file=wfsx, E0=-51.68, entry_points_order=["wfsx file"])
+            attrs = {
+                "bands_shape": (16, 8),
+                "ticklabels": None,
+                "tickvals": None,
+                "gap": 0.0575,
+                "spin_texture": False,
+                "spin": sisl.Spin("nc")
+            }
+
         elif name.startswith("sisl_H"):
             gr = sisl.geom.graphene()
             H = sisl.Hamiltonian(gr)
@@ -76,8 +94,11 @@ class TestBandsPlot(_TestPlot):
             # from two different prespectives
             if name.startswith("sisl_H_path"):
                 # Passing a list of points (as if we were interacting from a GUI)
+                # We want 6 points in total. This is the path that we want to get:
+                # [0,0,0] --2-- [2/3, 1/3, 0] --1-- [1/2, 0, 0]
                 path = [{"active": True, "x": x, "y": y, "z": z, "divisions": 3,
                     "name": tick} for tick, (x, y, z) in zip(["Gamma", "M", "K"], [[0, 0, 0], [2/3, 1/3, 0], [1/2, 0, 0]])]
+                path[-1]['divisions'] = 2
 
                 init_func = partial(H.plot.bands, band_structure=path)
             else:
@@ -150,6 +171,9 @@ class TestBandsPlot(_TestPlot):
             assert abs(np.diff(gap["Es"]) - test_attrs['gap']) < 0.01
 
     def test_custom_gaps_to_backend(self, plot, test_attrs):
+        if test_attrs['ticklabels'] is None:
+            return
+
         plot.update_settings(gap=False, custom_gaps=[])
         assert len(plot._for_backend["gaps"]) == 0
 
@@ -162,6 +186,9 @@ class TestBandsPlot(_TestPlot):
             assert len(set(["ks", "Es", "color", "name"]) - set(gap)) == 0
 
     def test_custom_gaps_correct(self, plot, test_attrs):
+        if test_attrs['ticklabels'] is None:
+            return
+
         # Generate custom gaps from labels
         gaps = list(itertools.combinations(test_attrs['ticklabels'], 2))
         plot.update_settings(custom_gaps=[{"from": gap[0], "to": gap[1]} for gap in gaps])

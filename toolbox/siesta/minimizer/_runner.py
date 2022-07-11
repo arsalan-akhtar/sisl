@@ -4,7 +4,6 @@
 from abc import abstractmethod, ABC
 import subprocess
 from pathlib import Path
-import glob
 import shutil
 import os
 import logging
@@ -156,8 +155,8 @@ class CopyRunner(PathRunner):
         for f in self.files:
             fin = self.path / f
             fout = self.to / f
-            if not f_in.is_file():
-                copy.append(f"Path({common}) {f_in_rel}->{f_out_rel}")
+            if not fin.is_file():
+                copy.append(f"Path(.) {fin.relative_to('.')}->{fout.relative_to('.')}")
             elif fin.is_file():
                 copy.append(str(f))
                 shutil.copyfile(fin, fout)
@@ -288,7 +287,7 @@ class SiestaRunner(CommandRunner):
         for pre, f in [('>', stdout), ('2>', stderr)]:
             try:
                 pipe += f"{pre} {f.name}"
-            except:
+            except Exception:
                 pass
         cmd = [str(cmd) for cmd in self.cmd + [self.fdf]]
         _log.debug(f"running Siesta using command[{self.path}]: {' '.join(cmd)} {pipe}")

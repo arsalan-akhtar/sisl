@@ -8,6 +8,7 @@ Tests specific functionality of a fatbands plot
 """
 import pytest
 import numpy as np
+from functools import partial
 
 import sisl
 from sisl.viz.plots.tests.test_bands import TestBandsPlot as _TestBandsPlot
@@ -33,6 +34,8 @@ class TestFatbandsPlot(_TestBandsPlot):
 
     @pytest.fixture(scope="class", params=[
         "sisl_H_unpolarized", "sisl_H_polarized", "sisl_H_noncolinear", "sisl_H_spinorbit",
+        "sisl_H_unpolarized_jump",
+        "wfsx file",
     ])
     def init_func_and_attrs(self, request, siesta_test_files):
         name = request.param
@@ -42,7 +45,7 @@ class TestFatbandsPlot(_TestBandsPlot):
             H = sisl.Hamiltonian(gr)
             H.construct([(0.1, 1.44), (0, -2.7)])
 
-            spin_type = name.split("_")[-1]
+            spin_type = name.split("_")[2]
             n_spin, H = {
                 "unpolarized": (1, H),
                 "polarized": (2, H.transform(spin=sisl.Spin.POLARIZED)),
@@ -55,17 +58,46 @@ class TestFatbandsPlot(_TestBandsPlot):
                 n_states *= 2
 
             # Directly creating a BandStructure object
-            bz = sisl.BandStructure(H, [[0, 0, 0], [2/3, 1/3, 0], [1/2, 0, 0]], 6, ["Gamma", "M", "K"])
+            if name.endswith("jump"):
+                names = ["Gamma", "M", "M", "K"]
+                bz = sisl.BandStructure(H, [[0, 0, 0], [2/3, 1/3, 0], None, [2/3, 1/3, 0], [1/2, 0, 0]], 6, names)
+                nk = 7
+                tickvals = [0., 1.70309799, 1.83083034, 2.68237934]
+            else:
+                names = ["Gamma", "M", "K"]
+                bz = sisl.BandStructure(H, [[0, 0, 0], [2/3, 1/3, 0], [1/2, 0, 0]], 6, names)
+                nk = 6
+                tickvals = [0., 1.70309799, 2.55464699]
             init_func = bz.plot.fatbands
 
             attrs = {
-                "bands_shape": (6, n_spin, n_states) if H.spin.is_polarized else (6, n_states),
-                "weights_shape": (n_spin, 6, n_states, 2) if H.spin.is_polarized else (6, n_states, 2),
-                "ticklabels": ["Gamma", "M", "K"],
-                "tickvals": [0., 1.70309799, 2.55464699],
+                "bands_shape": (nk, n_spin, n_states) if H.spin.is_polarized else (nk, n_states),
+                "weights_shape": (n_spin, nk, n_states, 2) if H.spin.is_polarized else (nk, n_states, 2),
+                "ticklabels": names,
+                "tickvals": tickvals,
                 "gap": 0,
                 "spin_texture": not H.spin.is_diagonal,
                 "spin": H.spin
+            }
+        elif name == "wfsx file":
+            # From a siesta bands.WFSX file
+            # Since there is no hamiltonian for bi2se3_3ql.fdf, we create a dummy one
+            wfsx = sisl.get_sile(siesta_test_files("bi2se3_3ql.bands.WFSX"))
+
+            geometry = sisl.get_sile(siesta_test_files("bi2se3_3ql.fdf")).read_geometry()
+            geometry = sisl.Geometry(geometry.xyz, atoms=wfsx.read_basis())
+
+            H = sisl.Hamiltonian(geometry, dim=4)
+
+            init_func = partial(H.plot.fatbands, wfsx_file=wfsx, E0=-51.68, entry_points_order=["wfsx file"])
+            attrs = {
+                "bands_shape": (16, 8),
+                "weights_shape": (16, 8, 195),
+                "ticklabels": None,
+                "tickvals": None,
+                "gap": 0.0575,
+                "spin_texture": False,
+                "spin": sisl.Spin("nc")
             }
 
         return init_func, attrs
@@ -101,8 +133,13 @@ class TestFatbandsPlot(_TestBandsPlot):
         assert set(total_weights.dims) == set(("spin", "band", "k"))
 
     def test_weights_values(self, plot, test_attrs):
-        assert np.allclose(plot.weights.sum("orb"), 1), "Weight values do not sum 1 for all states."
-        assert np.allclose(plot.weights.sum("band"), 2 if not test_attrs["spin"].is_diagonal else 1)
+        # Check that all states are normalized.
+        assert np.allclose(plot.weights.dropna("k", "all").sum("orb"), 1, atol=0.05), "Weight values do not sum 1 for all states."
+
+        # If we have all the bands of the system, assert that orbitals are also "normalized".
+        factor = 2 if not test_attrs["spin"].is_diagonal else 1
+        if len(plot.weights.band) * factor == len(plot.weights.orb):
+            assert np.allclose(plot.weights.dropna("k", "all").sum("band"), factor)
 
     def test_groups(self, plot, test_attrs):
         """
@@ -114,7 +151,10 @@ class TestFatbandsPlot(_TestBandsPlot):
         color = "green"
         name = "Nice group"
 
-        plot.update_settings(groups=[{"atoms": [1], "color": color, "name": name}])
+        plot.update_settings(
+            groups=[{"atoms": [1], "color": color, "name": name}],
+            bands_range=None, Erange=None
+        )
 
         assert "groups_weights" in plot._for_backend
         assert len(plot._for_backend["groups_weights"]) == 1
@@ -133,7 +173,8 @@ class TestFatbandsPlot(_TestBandsPlot):
         assert name in plot._for_backend["groups_metadata"]
         assert plot._for_backend["groups_metadata"][name]["style"]["line"]["color"] == color
 
-    def _test_split_groups(self, plot):
+    @pytest.mark.parametrize("request_atoms", [None, {"index": 0}])
+    def _test_split_groups(self, plot, constraint_atoms):
 
         # Number of groups that each splitting should give
         expected_splits = [
@@ -149,7 +190,8 @@ class TestFatbandsPlot(_TestBandsPlot):
 
         # Check that each splitting works as expected
         for group_by, n_groups in expected_splits:
-            plot.split_groups(group_by)
-            err_message = f'Not correctly grouping by {group_by}'
-            assert len(plot._for_backend["groups_weights"]) == n_groups, err_message
-            assert len(plot._for_backend["groups_metadata"]) == n_groups, err_message
+            plot.split_groups(group_by, atoms=constraint_atoms)
+            if constraint_atoms is None:
+                err_message = f'Not correctly grouping by {group_by}'
+                assert len(plot._for_backend["groups_weights"]) == n_groups, err_message
+                assert len(plot._for_backend["groups_metadata"]) == n_groups, err_message

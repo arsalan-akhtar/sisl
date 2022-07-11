@@ -3,7 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from math import pi
 import numpy as np
-from numpy import dot
 
 from sisl._internal import set_module
 from sisl.messages import warn
@@ -14,7 +13,7 @@ from sisl._indices import indices_in_sphere
 from .base import PureShape, ShapeToDispatcher
 
 
-__all__ = ['Ellipsoid', 'Sphere']
+__all__ = ["Ellipsoid", "Sphere"]
 
 
 @set_module("sisl.shape")
@@ -140,7 +139,7 @@ class Ellipsoid(PureShape):
         other.shape = (-1, 3)
 
         # First check
-        tmp = dot(other - self.center[None, :], self._iv)
+        tmp = np.dot(other - self.center[None, :], self._iv)
 
         # Get indices where we should do the more
         # expensive exact check of being inside shape
@@ -153,12 +152,15 @@ class Ellipsoid(PureShape):
         return fnorm(self._v)
 
 
+to_dispatch = Ellipsoid.to
+
+
 class EllipsoidToEllipsoid(ShapeToDispatcher):
     def dispatch(self, *args, **kwargs):
         return self._obj.copy()
 
-Ellipsoid.to.register("ellipsoid", EllipsoidToEllipsoid)
-Ellipsoid.to.register("Ellipsoid", EllipsoidToEllipsoid)
+to_dispatch.register("ellipsoid", EllipsoidToEllipsoid)
+to_dispatch.register("Ellipsoid", EllipsoidToEllipsoid)
 
 
 class EllipsoidToSphere(ShapeToDispatcher):
@@ -166,8 +168,8 @@ class EllipsoidToSphere(ShapeToDispatcher):
         shape = self._obj
         return Sphere(shape.radius.max(), shape.center)
 
-Ellipsoid.to.register("sphere", EllipsoidToSphere)
-Ellipsoid.to.register("Sphere", EllipsoidToSphere)
+to_dispatch.register("sphere", EllipsoidToSphere)
+to_dispatch.register("Sphere", EllipsoidToSphere)
 
 
 class EllipsoidToCuboid(ShapeToDispatcher):
@@ -176,8 +178,10 @@ class EllipsoidToCuboid(ShapeToDispatcher):
         shape = self._obj
         return Cuboid(shape._v * 2, shape.center)
 
-Ellipsoid.to.register("cuboid", EllipsoidToCuboid)
-Ellipsoid.to.register("Cuboid", EllipsoidToCuboid)
+to_dispatch.register("cuboid", EllipsoidToCuboid)
+to_dispatch.register("Cuboid", EllipsoidToCuboid)
+
+del to_dispatch
 
 
 @set_module("sisl.shape")

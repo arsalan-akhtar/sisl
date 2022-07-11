@@ -16,7 +16,8 @@ from sisl import Grid, SphericalOrbital, SislError
 from sisl.physics.electron import berry_phase, spin_squared, conductivity
 
 
-pytestmark = [pytest.mark.hamiltonian, pytest.mark.filterwarnings("ignore", category=SparseEfficiencyWarning)]
+pytestmark = [pytest.mark.physics, pytest.mark.hamiltonian,
+              pytest.mark.filterwarnings("ignore", category=SparseEfficiencyWarning)]
 
 
 @pytest.fixture
@@ -45,13 +46,6 @@ def setup():
     return t()
 
 
-def _to_voight(m):
-    idx1 = [0, 1, 2, 1, 0, 0]
-    idx2 = [0, 1, 2, 2, 2, 1]
-    return m[:, idx1, idx2]
-
-
-@pytest.mark.hamiltonian
 class TestHamiltonian:
 
     def test_objects(self, setup):
@@ -493,7 +487,7 @@ class TestHamiltonian:
         h = 1.j ** H
         assert h.dtype == np.complex128
 
-    def test_cut1(self, setup):
+    def test_untile1(self, setup):
         # Test of eigenvalues using a cut
         # Hamiltonian
         R, param = [0.1, 1.5], [1., 0.1]
@@ -505,14 +499,14 @@ class TestHamiltonian:
         H = Hamiltonian(g)
         H.construct([R, param])
         # Create cut Hamiltonian
-        Hc = H.cut(2, 1).cut(2, 0)
+        Hc = H.untile(2, 1).untile(2, 0)
         eigc = Hc.eigh()
         eigg = Hg.eigh()
         assert np.allclose(eigc, eigg)
         assert np.allclose(Hg.eigh(), Hc.eigh())
         del Hc, H
 
-    def test_cut2(self, setup):
+    def test_untile2(self, setup):
         # Test of eigenvalues using a cut
         # Hamiltonian
         R, param = [0.1, 1.5], [(1., 1.), (0.1, 0.1)]
@@ -525,7 +519,7 @@ class TestHamiltonian:
         H = Hamiltonian(g, orthogonal=False)
         H.construct([R, param])
         # Create cut Hamiltonian
-        Hc = H.cut(2, 1).cut(2, 0)
+        Hc = H.untile(2, 1).untile(2, 0)
         eigc = Hc.eigh()
         eigg = Hg.eigh()
         assert np.allclose(Hg.eigh(), Hc.eigh())
@@ -591,9 +585,12 @@ class TestHamiltonian:
             assert np.allclose(e, es.eig)
             assert np.allclose(v, es.state.T)
             assert np.allclose(es.norm2(), 1)
-            assert np.allclose(es.inner(diag=False), np.eye(len(es)))
+            # inner is not norm2
+            assert not np.allclose(es.inner(diag=False), np.eye(len(es)))
 
-            assert es.inner(es.sub(0)).shape == (1, )
+            with pytest.raises(ValueError):
+                es.inner(es.sub(0))
+
             assert es.inner(es.sub(0), diag=False).shape == (len(es), 1)
 
             eig1 = HS.eigh(k)
@@ -630,11 +627,6 @@ class TestHamiltonian:
         assert np.allclose(m1, m2.conj().T)
         assert es1.sub(r).inner(es2, diag=False).shape == (len(r), len(es2))
         assert es1.inner(es2.sub(r), diag=False).shape == (len(es1), len(r))
-        m1 = es1.sub(r).inner(es2, diag=True)
-        assert m1.shape == (len(r), )
-        m2 = es2.inner(es1.sub(r), diag=True)
-        assert m2.shape == (len(r), )
-        assert np.allclose(m1, m2.conj())
 
     def test_gauge_eig(self, setup):
         # Test of eigenvalues
@@ -653,6 +645,18 @@ class TestHamiltonian:
         es2 = H.eigenstate(k, gauge='r', dtype=np.complex64)
         assert np.allclose(es1.eig, es2.eig)
         assert not np.allclose(es1.state, es2.state)
+
+    def test_eigenstate_ipr(self, setup):
+        # Test of eigenvalues
+        R, param = [0.1, 1.5], [1., 0.1]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g)
+        H.construct((R, param))
+
+        k = [0.1] * 3
+        es = H.eigenstate(k)
+        ipr = es.ipr()
+        assert ipr.shape == (len(es),)
 
     def test_eigenstate_tile(self, setup):
         # Test of eigenvalues
@@ -722,6 +726,12 @@ class TestHamiltonian:
         H.construct((R, param))
 
         k = [0.1] * 3
+        # This is a degenerate eigenstate:
+        #  2, 2, 4, 4, 2, 2
+        # and hence a decoupling is necessary
+        # This test is the reason why a default degenerate=1e-5 is used
+        # since the gauge='R' yields the correct *decoupled* states
+        # where as gauge='r' mixes them in a bad way.
         es1 = H.eigenstate(k, gauge='R')
         es2 = H.eigenstate(k, gauge='r')
         assert np.allclose(es1.velocity(), es2.velocity())
@@ -737,15 +747,34 @@ class TestHamiltonian:
         assert np.allclose(v1, v2)
 
         # Projected velocity
-        pv1 = es1.velocity(project=True)
-        pv2 = es2.velocity(project=True)
-        assert np.allclose(pv1.sum(1), v2)
-        assert np.allclose(pv2.sum(1), v1)
-        # since degenerate states *could* swap states
-        # we can't for sure compare states
-        # This test is one of those cases
-        # hence the below is disabled
-        #assert np.allclose(pv1, pv2)
+        vv1 = es1.velocity(matrix=True)
+        vv2 = es2.velocity(matrix=True)
+        assert np.allclose(np.diagonal(vv1).T, v2)
+        assert np.allclose(np.diagonal(vv2).T, v1)
+
+    def test_derivative_orthogonal(self, setup):
+        R, param = [0.1, 1.5], [1., 0.1]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g)
+        H.construct((R, param))
+
+        k = [0.1] * 3
+        es = H.eigenstate()
+        v1, vv1 = es.derivative(2)
+        v = es.derivative(1)
+        assert np.allclose(v1, v)
+
+    def test_derivative_non_orthogonal(self, setup):
+        R, param = [0.1, 1.5], [(1., 1.), (0.1, 0.1)]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g, orthogonal=False)
+        H.construct((R, param))
+
+        k = [0.1] * 3
+        es = H.eigenstate()
+        v1, vv1 = es.derivative(2)
+        v = es.derivative(1)
+        assert np.allclose(v1, v)
 
     def test_berry_phase(self, setup):
         R, param = [0.1, 1.5], [1., 0.1]
@@ -755,7 +784,7 @@ class TestHamiltonian:
         bz = BandStructure.param_circle(H, 20, 0.01, [0, 0, 1], [1/3] * 3)
         berry_phase(bz)
         berry_phase(bz, sub=0)
-        berry_phase(bz, eigvals=True, sub=0)
+        berry_phase(bz, eigvals=True, sub=0, method='berry:svd')
 
     def test_berry_phase_fail_sc(self, setup):
         g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
@@ -771,32 +800,106 @@ class TestHamiltonian:
         bz2 = BandStructure.param_circle(H, 20, 0.01, [0, 0, 1], [1/3] * 3, loop=True)
         assert np.allclose(berry_phase(bz1), berry_phase(bz2))
 
-    def test_berry_phase_zak(self):
+    def test_berry_phase_non_orthogonal(self, setup):
+        R, param = [0.1, 1.5], [(1., 1.), (0.1, 0.1)]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g, orthogonal=False)
+        H.construct((R, param))
+
+        bz = BandStructure.param_circle(H, 20, 0.01, [0, 0, 1], [1/3] * 3)
+        berry_phase(bz)
+
+    def test_berry_phase_orthogonal_spin_down(self, setup):
+        R, param = [0.1, 1.5], [(1., 1.), (0.1, 0.2)]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g, spin=Spin.POLARIZED)
+        H.construct((R, param))
+
+        bz = BandStructure.param_circle(H, 20, 0.01, [0, 0, 1], [1/3] * 3)
+        bp1 = berry_phase(bz)
+        bp2 = berry_phase(bz, eigenstate_kwargs={"spin": 1})
+        assert bp1 != bp2
+
+    def test_berry_phase_zak_x_topological(self):
         # SSH model, topological cell
-        g = Geometry([[-.6, 0, 0], [0.6, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
+        # |t2| < |t1|
+        g = Geometry([[0, 0, 0], [1.2, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
         g.set_nsc([3, 1, 1])
         H = Hamiltonian(g)
         H.construct([(0.1, 1.0, 1.5), (0, 1., 0.5)])
         # Contour
-        k = np.linspace(0.0, 1.0, 101)
-        K = np.zeros([k.size, 3])
-        K[:, 0] = k
-        bz = BrillouinZone(H, K)
+        def func(parent, N, i):
+            return [i/N, 0, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
         assert np.allclose(np.abs(berry_phase(bz, sub=0, method='zak')), np.pi)
         # Just to do the other branch
         berry_phase(bz, method='zak')
+
+    def test_berry_phase_zak_x_topological_non_orthogonal(self):
+        # SSH model, topological cell
+        # |t2| < |t1|
+        g = Geometry([[0, 0, 0], [1.2, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
+        g.set_nsc([3, 1, 1])
+        H = Hamiltonian(g, orthogonal=False)
+        H.construct([(0.1, 1.0, 1.5), ((0, 1), (1., 0.25), (0.5, 0.1))])
+        # Contour
+        def func(parent, N, i):
+            return [i/N, 0, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
+        assert np.allclose(np.abs(berry_phase(bz, sub=0, method='zak')), np.pi)
+        # Just to do the other branch
+        berry_phase(bz, method='zak')
+
+    def test_berry_phase_zak_x_trivial(self):
+        # SSH model, trivial cell
+        # |t2| > |t1|
+        g = Geometry([[0, 0, 0], [1.2, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
+        g.set_nsc([3, 1, 1])
+        H = Hamiltonian(g)
+        H.construct([(0.1, 1.0, 1.5), (0, 0.5, 1.)])
+        # Contour
+        def func(parent, N, i):
+            return [i/N, 0, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
+        assert np.allclose(np.abs(berry_phase(bz, sub=0, method='zak')), 0.)
+        # Just to do the other branch
+        berry_phase(bz, method='zak')
+
+    def test_berry_phase_zak_y(self):
+        # SSH model, topological cell
+        g = Geometry([[0, -.6, 0], [0, 0.6, 0]], Atom(1, 1.001), sc=[10, 2, 10])
+        g.set_nsc([1, 3, 1])
+        H = Hamiltonian(g)
+        H.construct([(0.1, 1.0, 1.5), (0, 1., 0.5)])
+        # Contour
+        def func(parent, N, i):
+            return [0, i/N, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
+        assert np.allclose(np.abs(berry_phase(bz, sub=0, method='zak')), np.pi)
+        # Just to do the other branch
+        berry_phase(bz, method='zak')
+
+    def test_berry_phase_zak_offset(self):
+        # SSH model, topological cell
+        g = Geometry([[0., 0, 0], [1.2, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
+        g.set_nsc([3, 1, 1])
+        H = Hamiltonian(g)
+        H.construct([(0.1, 1.0, 1.5), (0, 1., 0.5)])
+        # Contour
+        def func(parent, N, i):
+            return [i/N, 0, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
+        zak = berry_phase(bz, sub=0, method='zak')
+        assert np.allclose(np.abs(zak), np.pi)
 
     def test_berry_phase_method_fail(self):
         # wrong method keyword
         g = Geometry([[-.6, 0, 0], [0.6, 0, 0]], Atom(1, 1.001), sc=[2, 10, 10])
         g.set_nsc([3, 1, 1])
         H = Hamiltonian(g)
-        H.construct([(0.1, 1.0, 1.5), (0, 1., 0.5)])
-        # Contour
-        k = np.linspace(0.0, 1.0, 101)
-        K = np.zeros([k.size, 3])
-        K[:, 0] = k
-        bz = BrillouinZone(H, K)
+        def func(parent, N, i):
+            return [0, i/N, 0]
+        bz = BrillouinZone.parametrize(H, func, 101)
         with pytest.raises(ValueError):
             berry_phase(bz, method='unknown')
 
@@ -821,22 +924,27 @@ class TestHamiltonian:
         mp = MonkhorstPack(H, [11, 11, 1])
         cond = conductivity(mp)
 
+    @pytest.mark.filterwarnings('ignore', category=np.ComplexWarning)
+    def test_conductivity_spin(self, setup):
+        R, param = [0.1, 1.5], [[1., 2.], [0.1, 0.2]]
+        g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
+        H = Hamiltonian(g, spin=Spin.POLARIZED)
+        H.construct((R, param))
+
+        mp = MonkhorstPack(H, [11, 11, 1])
+        cond = conductivity(mp)
+
     @pytest.mark.xfail(reason="Gauges make different decouplings")
-    def test_gauge_inv_eff(self, setup):
-        # This test fails because the de-coupling is currently 2021-05-21
-        # based on the sum of ddHk.
-        # Probably we should decouple based on dHk instead.
-        # Or preferably let the user decide decoupling.
+    def test_gauge_eff(self, setup):
+        # it is not fully clear to me why they are different
         R, param = [0.1, 1.5], [1., 0.1]
         g = setup.g.tile(2, 0).tile(2, 1).tile(2, 2)
         H = Hamiltonian(g)
         H.construct((R, param))
 
         k = [0.1] * 3
-        ie1 = H.eigenstate(k, gauge='R').inv_eff_mass_tensor()
-        ie2 = H.eigenstate(k, gauge='r').inv_eff_mass_tensor()
-        str(ie1)
-        str(ie2)
+        ie1 = H.eigenstate(k, gauge='R').effective_mass()
+        ie2 = H.eigenstate(k, gauge='r').effective_mass()
         assert np.allclose(abs(ie1), abs(ie2))
 
     def test_eigenstate_polarized_orthogonal_sk(self, setup):
@@ -921,8 +1029,8 @@ class TestHamiltonian:
         E = np.linspace(-4, 4, 1000)
         for k in ([0] *3, [0.2] * 3):
             es = H.eigenstate(k)
-            v = es.velocity_matrix()
-            vsub = es.sub([0, 1]).velocity_matrix()
+            v = es.velocity(matrix=True)
+            vsub = es.sub([0, 1]).velocity(matrix=True)
             assert np.allclose(v[:2, :2, :], vsub)
 
     @pytest.mark.filterwarnings('ignore', category=np.ComplexWarning)
@@ -932,33 +1040,9 @@ class TestHamiltonian:
         E = np.linspace(-4, 4, 1000)
         for k in ([0] *3, [0.2] * 3):
             es = HS.eigenstate(k)
-            v = es.velocity_matrix()
-            vsub = es.sub([0, 1]).velocity_matrix()
+            v = es.velocity(matrix=True)
+            vsub = es.sub([0, 1]).velocity(matrix=True)
             assert np.allclose(v[:2, :2, :], vsub)
-
-    def test_inv_eff_mass_tensor_orthogonal(self, setup):
-        H = setup.H.copy()
-        H.construct([(0.1, 1.5), ((1., 1.))])
-        E = np.linspace(-4, 4, 1000)
-        for k in ([0] *3, [0.2] * 3):
-            es = H.eigenstate(k)
-            v = es.inv_eff_mass_tensor()
-            vsub = es.sub([0]).inv_eff_mass_tensor()
-            assert np.allclose(v[0, :], vsub)
-            vsub = es.sub([0]).inv_eff_mass_tensor(True)
-            assert np.allclose(v[0, :], _to_voight(vsub))
-
-    def test_inv_eff_mass_tensor_nonorthogonal(self, setup):
-        HS = setup.HS.copy()
-        HS.construct([(0.1, 1.5), ((1., 1.), (0.1, 0.1))])
-        E = np.linspace(-4, 4, 1000)
-        for k in ([0] *3, [0.2] * 3):
-            es = HS.eigenstate(k)
-            v = es.inv_eff_mass_tensor()
-            vsub = es.sub([0]).inv_eff_mass_tensor()
-            assert np.allclose(v[0, :], vsub)
-            vsub = es.sub([0]).inv_eff_mass_tensor(True)
-            assert np.allclose(v[0, :], _to_voight(vsub))
 
     def test_dos1(self, setup):
         HS = setup.HS.copy()
@@ -1032,6 +1116,44 @@ class TestHamiltonian:
         assert PDOS.dtype.kind == 'f'
         assert np.allclose(PDOS.sum(0), DOS)
 
+    def test_coop_against_pdos_nonortho(self, setup):
+        HS = setup.HS.copy()
+        HS.construct([(0.1, 1.5), ((0., 1.), (1., 0.1))])
+        E = np.linspace(-4, 4, 100)
+        for k in ([0] *3, [0.2] * 3):
+            es = HS.eigenstate(k)
+            COOP = es.COOP(E, 'lorentzian')
+
+            DOS = es.DOS(E, 'lorentzian')
+            COOP2DOS = np.array([C.sum() for C in COOP])
+            assert DOS.shape == COOP2DOS.shape
+            assert np.allclose(DOS, COOP2DOS)
+
+            # This one returns sparse matrices, so we have to
+            # deal with that.
+            DOS = es.PDOS(E, 'lorentzian')
+            COOP2DOS = np.array([C.sum(1).A.ravel() for C in COOP]).T
+            assert DOS.shape == COOP2DOS.shape
+            assert np.allclose(DOS, COOP2DOS)
+
+    def test_coop_against_pdos_ortho(self, setup):
+        H = setup.H.copy()
+        H.construct([(0.1, 1.5), (0., 1.)])
+        E = np.linspace(-4, 4, 100)
+        for k in ([0] *3, [0.2] * 3):
+            es = H.eigenstate(k)
+            COOP = es.COOP(E, 'lorentzian')
+
+            DOS = es.DOS(E, 'lorentzian')
+            COOP2DOS = np.array([C.sum() for C in COOP])
+            assert DOS.shape == COOP2DOS.shape
+            assert np.allclose(DOS, COOP2DOS)
+
+            DOS = es.PDOS(E, 'lorentzian')
+            COOP2DOS = np.array([C.sum(1).ravel() for C in COOP]).T
+            assert DOS.shape == COOP2DOS.shape
+            assert np.allclose(DOS, COOP2DOS)
+
     def test_spin1(self, setup):
         g = Geometry([[i, 0, 0] for i in range(10)], Atom(6, R=1.01), sc=SuperCell(100, nsc=[3, 3, 1]))
         H = Hamiltonian(g, dtype=np.int32, spin=Spin.POLARIZED)
@@ -1100,6 +1222,11 @@ class TestHamiltonian:
         assert np.abs(Hcsr[0] - Ht.tocsr(0)).sum() == 0
         assert np.abs(Hcsr[0] - Ht.tocsr(1)).sum() == 0
         assert np.abs(Hcsr[-1] - Ht.tocsr(-1)).sum() == 0
+
+        Ht2 = H.transform([[1], [1]], spin=Spin.POLARIZED) - Ht
+        assert np.abs(Ht2.tocsr(0)).sum() == 0
+        assert np.abs(Ht2.tocsr(1)).sum() == 0
+        assert np.abs(Ht2.tocsr(-1)).sum() == 0
 
         Ht = H.transform(spin=Spin.NONCOLINEAR)
         assert np.abs(Hcsr[0] - Ht.tocsr(0)).sum() == 0
@@ -1263,14 +1390,13 @@ class TestHamiltonian:
             PDOS = es.PDOS(np.linspace(-1, 1, 100))
             DOS = es.DOS(np.linspace(-1, 1, 100))
             assert np.allclose(PDOS.sum(1)[0, :], DOS)
-            es.velocity_matrix()
-            es.inv_eff_mass_tensor()
+            es.velocity(matrix=True)
 
         # Check the velocities
         # But only compare for np.float64, we need the precision
         v = es.velocity()
-        pv = es.velocity(project=True)
-        assert np.allclose(pv.sum(1), v)
+        vv = es.velocity(matrix=True)
+        assert np.allclose(np.diagonal(vv).T, v)
 
         # Ensure we can change gauge for NC stuff
         es.change_gauge('R')
@@ -1327,14 +1453,13 @@ class TestHamiltonian:
             PDOS = es.PDOS(np.linspace(-1, 1, 100))
             DOS = es.DOS(np.linspace(-1, 1, 100))
             assert np.allclose(PDOS.sum(1)[0, :], DOS)
-            es.velocity_matrix()
-            es.inv_eff_mass_tensor()
+            es.velocity(matrix=True)
 
         # Check the velocities
         # But only compare for np.float64, we need the precision
         v = es.velocity()
-        pv = es.velocity(project=True)
-        assert np.allclose(pv.sum(1), v)
+        vv = es.velocity(matrix=True)
+        assert np.allclose(np.diagonal(vv).T, v)
 
         # Ensure we can change gauge for NC stuff
         es.change_gauge('R')
@@ -1404,14 +1529,13 @@ class TestHamiltonian:
             PDOS = es.PDOS(np.linspace(-1, 1, 100))
             DOS = es.DOS(np.linspace(-1, 1, 100))
             assert np.allclose(PDOS.sum(1)[0, :], DOS)
-            es.velocity_matrix()
-            es.inv_eff_mass_tensor()
+            es.velocity(matrix=True)
 
         # Check the velocities
         # But only compare for np.float64, we need the precision
         v = es.velocity()
-        pv = es.velocity(project=True)
-        assert np.allclose(pv.sum(1), v)
+        vv = es.velocity(matrix=True)
+        assert np.allclose(np.diagonal(vv).T, v)
 
         # Ensure we can change gauge for SO stuff
         es.change_gauge('R')

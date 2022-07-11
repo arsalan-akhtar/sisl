@@ -2,12 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import pytest
+import sys
 
 import math as m
 import numpy as np
 import scipy as sc
 
-from sisl.utils.ranges import array_arange
+from sisl._array import array_arange
 from sisl.sparse import *
 from sisl.sparse import indices
 
@@ -272,6 +273,7 @@ def test_create_1d_bcasting_data_1d(setup):
     assert np.sum(s1 - s2) == 0
 
 
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Unknown windows error in b-casting")
 def test_create_1d_bcasting_data_2d(setup):
     s1 = setup.s1.copy()
     data = np.random.randint(1, 100, (4, 3))
@@ -1425,6 +1427,17 @@ def test_transform4():
     assert tr.shape[:2] == csr.shape[:2]
     assert tr.shape[2] == len(matrix)
     assert np.abs(tr.tocsr(0) - 0.3j * csr1 - 0.7j * csr2).sum() == 0.
+
+
+def test_transform_fail():
+    csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
+    csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
+    csr = SparseCSR.fromsp(csr1, csr2)
+
+    # complex 1x3 matrix
+    matrix = [[0.3j, 0.7j, 1.]]
+    with pytest.raises(ValueError):
+        csr.transform(matrix=matrix)
 
 
 @pytest.mark.slow

@@ -4,12 +4,8 @@
 import re
 from itertools import groupby
 
-from sisl._array import array_arange
-
 
 __all__ = ["strmap", "strseq", "lstranges", "erange", "list2str", "fileindex"]
-# this will be deprecated sooner or later
-__all__ += ["array_arange"]
 
 
 # Function to change a string to a range of integers
@@ -35,6 +31,8 @@ def strmap(func, s, start=None, end=None, sep="b"):
     [1]
     >>> strmap(int, "1-2")
     [(1, 2)]
+    >>> strmap(int, "-2", end=4)
+    [2]
     >>> strmap(int, "1-")
     [(1, None)]
     >>> strmap(int, "1-", end=4)
@@ -42,10 +40,10 @@ def strmap(func, s, start=None, end=None, sep="b"):
     >>> strmap(int, "1-10[2-3]")
     [((1, 10), [(2, 3)])]
     """
-    if sep == "b":
+    if sep in ("b", "[", "]"):
         segment = re.compile(r"\[(.+)\]\[(.+)\]|(.+)\[(.+)\]|(.+)")
         sep1, sep2 = "[", "]"
-    elif sep == "c":
+    elif sep in ("c", "{", "}"):
         segment = re.compile(r"\{(.+)\}\{(.+)\}|(.+)\{(.+)\}|(.+)")
         sep1, sep2 = "{", "}"
     else:
@@ -117,6 +115,14 @@ def strseq(cast, s, start=None, end=None):
     3
     >>> strseq(int, "3-6")
     (3, 6)
+    >>> strseq(int, "-2")
+    -2
+    >>> strseq(int, "-2", end=7)
+    5
+    >>> strseq(int, "-2:2", end=7)
+    (-2, 2)
+    >>> strseq(int, "-2-2", end=7)
+    (-2, 2)
     >>> strseq(int, "3-")
     (3, None)
     >>> strseq(int, "3:2:7")
@@ -130,6 +136,10 @@ def strseq(cast, s, start=None, end=None):
     """
     if ":" in s:
         s = [ss.strip() for ss in s.split(":")]
+    elif s.startswith("-") and len(s) > 1:
+        if s.count("-") > 1:
+            s = [ss.strip() for ss in s[1:].split("-")]
+            s[0] = f"-{s[0]}"
     elif "-" in s:
         s = [ss.strip() for ss in s.split("-")]
     if isinstance(s, list):
@@ -138,7 +148,10 @@ def strseq(cast, s, start=None, end=None):
         if len(s[-1]) == 0:
             s[-1] = end
         return tuple(cast(ss) if ss is not None else None for ss in s)
-    return cast(s)
+    ret = cast(s)
+    if ret < 0 and end is not None:
+        return ret + end
+    return ret
 
 
 def erange(start, step, end=None):

@@ -4,8 +4,6 @@
 from numbers import Integral
 
 import numpy as np
-from numpy import in1d
-from numpy import sort as npsort
 from functools import lru_cache
 
 # Import sile objects
@@ -13,7 +11,6 @@ from ..sile import SileWarning
 from .sile import SileCDFTBtrans
 from sisl.messages import warn, info
 from sisl._internal import set_module
-from sisl.utils import *
 import sisl._array as _a
 from sisl._indices import indices
 
@@ -213,7 +210,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
         g = super().read_geometry(*args, **kwargs)
         try:
             g['Buffer'] = self.a_buf[:]
-        except:
+        except Exception:
             # Then no buffer atoms
             pass
         g['Device'] = self.a_dev[:]
@@ -221,7 +218,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
             for elec in self.elecs:
                 g[elec] = self._value('a', [elec]) - 1
                 g[f"{elec}+"] = self._value('a_down', [elec]) - 1
-        except:
+        except Exception:
             pass
         return g
 
@@ -312,7 +309,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
         try:
             elec = int(elec)
             return self.elecs[elec]
-        except:
+        except Exception:
             return elec
 
     @property
@@ -339,7 +336,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
         """
         try:
             return self._value('eta', self._elec(elec))[0] * self._E2eV
-        except:
+        except Exception:
             return 0. # unknown!
 
     @lru_cache(maxsize=16)
@@ -406,6 +403,28 @@ class _devncSileTBtrans(_ncSileTBtrans):
            BTD block sizes for the electrode
         """
         return self._value('btd', self._elec(elec))
+
+    @lru_cache(maxsize=16)
+    def na_down(self, elec):
+        """ Number of atoms in the downfolding region (without device downfolded region)
+
+        Parameters
+        ----------
+        elec : str or int
+           Number of downfolding atoms for electrode `elec`
+        """
+        return len(self._dimension('na_down', self._elec(elec)))
+
+    @lru_cache(maxsize=16)
+    def no_e(self, elec):
+        """ Number of orbitals in the downfolded region of the electrode in the device
+
+        Parameters
+        ----------
+        elec : str or int
+           Specify the electrode to query number of downfolded orbitals
+        """
+        return len(self._dimension('no_e', self._elec(elec)))
 
     @lru_cache(maxsize=16)
     def no_down(self, elec):
@@ -475,7 +494,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
                 subn[pvt] = 0
                 pvt -= _a.cumsumi(subn)[pvt]
             elif sort:
-                pvt = npsort(pvt)
+                pvt = np.sort(pvt)
             return pvt
 
         # Get electrode pivoting elements
@@ -485,17 +504,17 @@ class _devncSileTBtrans(_ncSileTBtrans):
             # Since we know that pvt is also sorted, then
             # the resulting in_device would also return sorted
             # indices
-            se_pvt = npsort(se_pvt)
+            se_pvt = np.sort(se_pvt)
 
         if in_device:
             pvt = self._value('pivot') - 1
             if sort:
-                pvt = npsort(pvt)
+                pvt = np.sort(pvt)
             # translate to the device indices
             se_pvt = indices(pvt, se_pvt, 0)
         return se_pvt
 
-    def a2p(self, atoms, elec=None):
+    def a2p(self, atoms):
         """ Return the pivoting orbital indices (0-based) for the atoms, possibly on an electrode
 
         This is equivalent to:
@@ -508,9 +527,6 @@ class _devncSileTBtrans(_ncSileTBtrans):
         ----------
         atoms : array_like or int
            atomic indices (0-based)
-        elec : str or int or None, optional
-           electrode to return pivoting indices of (if None it is the
-           device pivoting indices).
         """
         return self.o2p(self.geometry.a2o(atoms, True))
 
@@ -529,7 +545,7 @@ class _devncSileTBtrans(_ncSileTBtrans):
         """
         # We need ravel(), otherwise taking len of an int will fail
         orbitals = self.geometry._sanitize_orbs(orbitals).ravel()
-        porb = in1d(self.pivot(elec), orbitals).nonzero()[0]
+        porb = np.in1d(self.pivot(elec), orbitals).nonzero()[0]
         d = len(orbitals) - len(porb)
         if d != 0:
             warn(f"{self.__class__.__name__}.o2p requesting an orbital outside the device region, "

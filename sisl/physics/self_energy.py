@@ -12,7 +12,6 @@ from numpy import abs as _abs
 from sisl._internal import set_module
 from sisl.messages import warn, info
 from sisl.utils.mathematics import fnorm
-from sisl.utils.ranges import array_arange
 from sisl._help import array_replace
 import sisl._array as _a
 from sisl.linalg import linalg_info, solve, inv
@@ -191,6 +190,8 @@ class SemiInfinite(SelfEnergy):
             self.semi_inf = 1
         elif INF.endswith("C"):
             self.semi_inf = 2
+        else:
+            raise ValueError(f"{self.__class__.__name__} infinite keyword does not end with `A`, `B` or `C`.")
 
         # Check that the Hamiltonian does have a non-zero V along the semi-infinite direction
         if spgeom.geometry.sc.nsc[self.semi_inf] == 1:
@@ -253,7 +254,7 @@ class RecursiveSI(SemiInfinite):
         idx = np.delete(_a.arangei(n_s),
                         _a.arrayi(self.spgeom1.geometry.sc.sc_index(nsc))) * n
 
-        cols = array_arange(idx, idx + n)
+        cols = _a.array_arange(idx, idx + n)
         # Delete all values in columns, but keep them to retain the supercell information
         self.spgeom1._csr.delete_columns(cols, keep_shape=True)
 
@@ -357,7 +358,7 @@ class RecursiveSI(SemiInfinite):
                 del ab, alpha, beta, ab2, tab
                 return inv(GB)
 
-        raise ValueError(self.__class__.__name__+".green could not converge Green function calculation")
+        raise ValueError(f"{self.__class__.__name__}.green could not converge Green function calculation")
 
     def self_energy(self, E, k=(0, 0, 0), dtype=None, eps=1e-14, bulk=False, **kwargs):
         r""" Return a dense matrix with the self-energy at energy `E` and k-point `k` (default Gamma).
@@ -785,7 +786,7 @@ class RealSpaceSE(SelfEnergy):
         csr.delete_columns(cols, keep_shape=True)
         # Now PC only contains couplings along the k and semi-inf directions
         # Extract the connecting orbitals and reduce them to unique atomic indices
-        orbs = g.osc2uc(csr.col[array_arange(csr.ptr[:-1], n=csr.ncol)], True)
+        orbs = g.osc2uc(csr.col[_a.array_arange(csr.ptr[:-1], n=csr.ncol)], True)
         atoms = g.o2a(orbs, True)
 
         # Only retain coupling atoms
@@ -936,7 +937,7 @@ class RealSpaceSE(SelfEnergy):
         try:
             # If the BZ implements TRS (MonkhorstPack) then force it
             trs = bz._trs >= 0
-        except:
+        except Exception:
             trs = opt["trs"]
 
         if dtype is None:
@@ -1362,7 +1363,7 @@ class RealSpaceSI(SelfEnergy):
             csr.delete_columns(cols, keep_shape=True)
             # Now PC only contains couplings along the k and semi-inf directions
             # Extract the connecting orbitals and reduce them to unique atomic indices
-            orbs = g.osc2uc(csr.col[array_arange(csr.ptr[:-1], n=csr.ncol)], True)
+            orbs = g.osc2uc(csr.col[_a.array_arange(csr.ptr[:-1], n=csr.ncol)], True)
             atom = g.o2a(orbs, True)
             expand(atom, nrep, na, na_off)
             return atom
@@ -1529,7 +1530,7 @@ class RealSpaceSI(SelfEnergy):
         try:
             # If the BZ implements TRS (MonkhorstPack) then force it
             trs = bz._trs >= 0
-        except:
+        except Exception:
             trs = opt["trs"]
 
         if dtype is None:

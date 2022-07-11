@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """ Global sisl fixtures """
-
-import contextlib
 import os
 import numpy as np
 
@@ -82,8 +80,12 @@ def sisl_tmp(request, tmp_path_factory):
                 f = self.files.pop()
                 if f.is_file():
                     try:
+                        f.close()
+                    except Exception:
+                        pass
+                    try:
                         f.unlink()
-                    except:
+                    except Exception:
                         pass
             while len(self.dirs) > 0:
                 # Do each removal separately (from back of directory)
@@ -91,7 +93,7 @@ def sisl_tmp(request, tmp_path_factory):
                 if d.is_dir():
                     try:
                         d.rmdir()
-                    except:
+                    except Exception:
                         pass
     ff = FileFactory()
     request.addfinalizer(ff.teardown)
@@ -202,7 +204,7 @@ def pytest_configure(config):
                  'state', 'electron', 'phonon', 'utils', 'unit', 'distribution',
                  'spin', 'self_energy', 'help', 'messages', 'namedindex', 'sparse',
                  'supercell', 'sc', 'quaternion', 'sparse_geometry', 'sparse_orbital',
-                 'ranges',
+                 'ranges', 'physics',
                  'orbital', 'oplist', 'grid', 'atoms', 'atom', 'sgrid', 'sdata', 'sgeom',
                  'version', 'bz', 'brillouinzone', 'inv', 'eig', 'linalg',
                  'density_matrix', 'dynamicalmatrix', 'energydensity_matrix',

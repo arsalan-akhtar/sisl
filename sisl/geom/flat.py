@@ -5,6 +5,7 @@ import numpy as np
 
 from sisl._internal import set_module
 from sisl import Atom, Geometry, SuperCell
+from ._common import geometry_define_nsc
 
 __all__ = ['honeycomb', 'graphene']
 
@@ -33,7 +34,7 @@ def honeycomb(bond, atoms, orthogonal=False):
     if orthogonal:
         sc = SuperCell(np.array([[3., 0., 0.],
                                  [0., 2 * sq3h, 0.],
-                                 [0., 0., 10.]], np.float64) * bond, nsc=[3, 3, 1])
+                                 [0., 0., 10.]], np.float64) * bond)
         g = Geometry(np.array([[0., 0., 0.],
                                [0.5, sq3h, 0.],
                                [1.5, sq3h, 0.],
@@ -42,10 +43,11 @@ def honeycomb(bond, atoms, orthogonal=False):
     else:
         sc = SuperCell(np.array([[1.5, sq3h, 0.],
                                  [1.5, -sq3h, 0.],
-                                 [0., 0., 10.]], np.float64) * bond, nsc=[3, 3, 1])
+                                 [0., 0., 10.]], np.float64) * bond)
         g = Geometry(np.array([[0., 0., 0.],
                                [1., 0., 0.]], np.float64) * bond,
                      atoms, sc=sc)
+    geometry_define_nsc(g, [True, True, False])
     return g
 
 
@@ -56,7 +58,7 @@ def graphene(bond=1.42, atoms=None, orthogonal=False):
     ----------
     bond : float
         bond length between atoms (*not* lattice constant)
-    atom : Atom, optional
+    atoms : Atom, optional
         the atom (or atoms) that the honeycomb lattice consists of.
         Default to Carbon atom.
     orthogonal : bool, optional
@@ -68,5 +70,5 @@ def graphene(bond=1.42, atoms=None, orthogonal=False):
     bilayer: create bilayer honeycomb lattices
     """
     if atoms is None:
-        return honeycomb(bond, Atom(Z=6, R=bond * 1.01), orthogonal)
+        atoms = Atom(Z=6, R=bond * 1.01)
     return honeycomb(bond, atoms, orthogonal)

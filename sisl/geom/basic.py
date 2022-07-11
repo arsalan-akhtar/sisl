@@ -5,8 +5,9 @@ import numpy as np
 
 from sisl._internal import set_module
 from sisl import Geometry, SuperCell
+from ._common import geometry_define_nsc, geometry2uc
 
-__all__ = ['sc', 'bcc', 'fcc', 'hcp']
+__all__ = ['sc', 'bcc', 'fcc', 'hcp', 'rocksalt']
 
 # A few needed variables
 _s30 = 1 / 2
@@ -35,8 +36,7 @@ def sc(alat, atom):
                              [0, 1, 0],
                              [0, 0, 1]], np.float64) * alat)
     g = Geometry([0, 0, 0], atom, sc=sc)
-    if np.all(g.maxR(True) > 0.):
-        g.optimize_nsc()
+    geometry_define_nsc(g)
     return g
 
 
@@ -64,8 +64,7 @@ def bcc(alat, atoms, orthogonal=False):
                                  [1, -1, 1],
                                  [1, 1, -1]], np.float64) * alat / 2)
         g = Geometry([0, 0, 0], atoms, sc=sc)
-    if np.all(g.maxR(True) > 0.):
-        g.optimize_nsc()
+    geometry_define_nsc(g)
     return g
 
 
@@ -94,8 +93,7 @@ def fcc(alat, atoms, orthogonal=False):
                                  [1, 0, 1],
                                  [1, 1, 0]], np.float64) * alat / 2)
         g = Geometry([0, 0, 0], atoms, sc=sc)
-    if np.all(g.maxR(True) > 0.):
-        g.optimize_nsc()
+    geometry_define_nsc(g)
     return g
 
 
@@ -116,7 +114,7 @@ def hcp(a, atoms, coa=1.63333, orthogonal=False):
     """
     # height of hcp structure
     c = a * coa
-    a2sq = a / 2 ** .5
+    a3sq = a / 3 ** .5
     if orthogonal:
         sc = SuperCell([[a + a * _c60 * 2, 0, 0],
                         [0, a * _c30 * 2, 0],
@@ -136,8 +134,34 @@ def hcp(a, atoms, coa=1.63333, orthogonal=False):
         g = gt.append(gr, 2)
     else:
         sc = SuperCell([a, a, c, 90, 90, 60])
-        g = Geometry([[0, 0, 0], [a2sq * _c30, a2sq * _s30, c / 2]],
+        g = Geometry([[0, 0, 0], [a3sq * _c30, a3sq * _s30, c / 2]],
                      atoms, sc=sc)
-    if np.all(g.maxR(True) > 0.):
-        g.optimize_nsc()
+    geometry_define_nsc(g)
+    return g
+
+
+@set_module("sisl.geom")
+def rocksalt(alat, atoms, orthogonal=False):
+    """ Two-element rocksalt lattice with 2 (non-orthogonal) or 8 atoms (orthogonal)
+
+    This is equivalent to the NaCl crystal structure (halite).
+
+    Parameters
+    ----------
+    alat : float
+        lattice parameter
+    atoms : list
+        a list of two atoms that the crystal consists of
+    orthogonal : bool, optional
+        whether the lattice is orthogonal or not
+    """
+    if isinstance(atoms, str):
+        atoms = [atoms, atoms]
+    if len(atoms) != 2:
+        raise ValueError(f"Invalid list of atoms, must have length 2")
+    g1 = fcc(alat, atoms[0], orthogonal=orthogonal)
+    g2 = fcc(alat, atoms[1], orthogonal=orthogonal).move(np.array([1, 1, 1]) * alat / 2)
+    g = g1.add(g2)
+    g = geometry2uc(g).sort(lattice=[2, 1, 0])
+    geometry_define_nsc(g)
     return g

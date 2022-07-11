@@ -7,10 +7,13 @@ except Exception:
     from io import StringIO
 import numpy as np
 
-from ..sile import add_sile
-
+from sisl.utils import (
+    default_ArgumentParser, collect_action,
+    list2str,
+)
 from sisl._internal import set_module
-from sisl.utils import *
+from ..sile import add_sile
+from sisl.physics import DensityMatrix
 from sisl.unit.siesta import unit_convert
 
 from .tbt import tbtncSileTBtrans
@@ -438,12 +441,6 @@ class tbtprojncSileTBtrans(tbtncSileTBtrans):
             else:
                 print('{:70s}[{}]'.format(' '.join(args), ', '.join(option)), file=out)
 
-        def truefalse(bol, string, fdf=None, suf=2):
-            if bol:
-                true(string, fdf, suf)
-            else:
-                prnt("{}- {}: false".format(' ' * suf, string), option=fdf)
-
         def true(string, fdf=None, suf=2):
             prnt("{}+ {}: true".format(' ' * suf, string), option=fdf)
 
@@ -586,17 +583,16 @@ class tbtprojncSileTBtrans(tbtncSileTBtrans):
 
             try:
                 bloch = self.bloch(elec)
-            except:
+            except Exception:
                 bloch = [1] * 3
             try:
                 n_btd = self.n_btd(elec)
-            except:
+            except Exception:
                 n_btd = 'unknown'
             prnt()
             prnt(f"Electrode: {elec}")
             prnt(f"  - number of BTD blocks: {n_btd}")
             prnt("  - Bloch: [{}, {}, {}]".format(*bloch))
-            gelec = self.groups[elec]
             if 'TBT' in self._trans_type:
                 prnt("  - chemical potential: {:.4f} eV".format(self.chemical_potential(elec)))
                 prnt("  - electron temperature: {:.2f} K".format(self.electron_temperature(elec)))

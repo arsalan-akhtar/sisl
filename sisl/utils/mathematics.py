@@ -5,9 +5,11 @@ from numpy import dot, sqrt, square
 from numpy import cos, sin, arctan2, arccos
 from numpy import asarray, take, delete, empty
 from numpy import concatenate, argsort
+from scipy.special import sph_harm
 
 from sisl import _array as _a
 from sisl._indices import indices_le
+
 
 __all__ = ["fnorm", "fnorm2", "expand", "orthogonalize"]
 __all__ += ["spher2cart", "cart2spher", "spherical_harm"]
@@ -112,11 +114,17 @@ def spher2cart(r, theta, phi):
     phi : array_like
        polar angle from the :math:`z` axis
     """
-    rx = r * cos(theta) * sin(phi)
-    R = _a.emptyd(rx.shape + (3, ))
-    R[..., 0] = rx
-    del rx
-    R[..., 1] = r * sin(theta) * sin(phi)
+    r = asarray(r)
+    theta = asarray(theta)
+    phi = asarray(phi)
+    shape = _a.broadcast_shapes(r.shape, theta.shape, phi.shape)
+    print(r.shape, theta.shape, phi.shape)
+    print(shape)
+    R = _a.empty(shape + (3,), dtype=r.dtype)
+    sphi = sin(phi)
+    R[..., 0] = r * cos(theta) * sphi
+    R[..., 1] = r * sin(theta) * sphi
+    del sphi
     R[..., 2] = r * cos(phi)
     return R
 
@@ -152,12 +160,10 @@ def cart2spher(r, theta=True, cos_phi=False, maxR=None):
        If `cos_phi` is ``True`` this is :math:`\cos(\phi)`, otherwise
        :math:`\phi` is returned (the polar angle from the :math:`z` axis)
     """
-    r = _a.asarrayd(r).reshape(-1, 3)
-    if r.shape[-1] != 3:
-        raise ValueError("Vector does not end with shape 3.")
+    r = _a.asarray(r).reshape(-1, 3)
     n = r.shape[0]
     if maxR is None:
-        rr = sqrt(square(r).sum(1))
+        rr = sqrt(square(r).sum(-1))
         if theta:
             theta = arctan2(r[:, 1], r[:, 0])
         else:
@@ -169,7 +175,7 @@ def cart2spher(r, theta=True, cos_phi=False, maxR=None):
         phi[rr == 0.] = 0.
         return rr, theta, phi
 
-    rr = square(r).sum(1)
+    rr = square(r).sum(-1)
     idx = indices_le(rr, maxR ** 2)
     r = take(r, idx, 0)
     rr = sqrt(take(rr, idx))

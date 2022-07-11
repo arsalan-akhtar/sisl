@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import numpy as np
-from numpy import dot
 
 import sisl._array as _a
 from sisl._internal import set_module
@@ -10,7 +9,6 @@ from sisl.linalg import inv
 from sisl.utils.mathematics import fnorm, expand
 from sisl._math_small import dot3, cross3
 from sisl._indices import indices_gt_le
-from sisl._dispatcher import ClassDispatcher
 
 from .base import PureShape, ShapeToDispatcher
 
@@ -145,7 +143,7 @@ class Cuboid(PureShape):
         other = _a.asarrayd(other).reshape(-1, 3)
 
         # Offset origin
-        tmp = dot(other - self.origin[None, :], self._iv)
+        tmp = np.dot(other - self.origin[None, :], self._iv)
 
         # First reject those that are definitely not inside
         # The proximity is 1e-12 of the inverse cell.
@@ -169,6 +167,9 @@ class Cuboid(PureShape):
         return fnorm(self._v)
 
 
+to_dispatch = Cuboid.to
+
+
 class CuboidToEllipsoid(ShapeToDispatcher):
     def dispatch(self, *args, **kwargs):
         from .ellipsoid import Ellipsoid
@@ -176,8 +177,8 @@ class CuboidToEllipsoid(ShapeToDispatcher):
         # Rescale each vector
         return Ellipsoid(shape._v / 2 * 3 ** .5, shape.center.copy())
 
-Cuboid.to.register("ellipsoid", CuboidToEllipsoid)
-Cuboid.to.register("Ellipsoid", CuboidToEllipsoid)
+to_dispatch.register("ellipsoid", CuboidToEllipsoid)
+to_dispatch.register("Ellipsoid", CuboidToEllipsoid)
 
 
 class CuboidToSphere(ShapeToDispatcher):
@@ -187,16 +188,19 @@ class CuboidToSphere(ShapeToDispatcher):
         # Rescale each vector
         return Sphere(shape.edge_length.max() / 2 * 3 ** .5, shape.center.copy())
 
-Cuboid.to.register("sphere", CuboidToSphere)
-Cuboid.to.register("Sphere", CuboidToSphere)
+to_dispatch.register("sphere", CuboidToSphere)
+to_dispatch.register("Sphere", CuboidToSphere)
 
 
 class CuboidToCuboid(ShapeToDispatcher):
     def dispatch(self, *args, **kwargs):
         return self._obj.copy()
 
-Cuboid.to.register("cuboid", CuboidToCuboid)
-Cuboid.to.register("Cuboid", CuboidToCuboid)
+to_dispatch.register("cuboid", CuboidToCuboid)
+to_dispatch.register("Cuboid", CuboidToCuboid)
+
+
+del to_dispatch
 
 
 @set_module("sisl.shape")

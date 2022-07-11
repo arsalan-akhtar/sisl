@@ -41,8 +41,8 @@ class refSileScaleUp(SileScaleUp):
         na, ns = map(int, self.readline().split()[:2])
         # Convert species to atom objects
         try:
-            species = get_sile(self.file.rsplit('REF', 1)[0] + 'orbocc').read_atom()
-        except:
+            species = get_sile(str(self.file).replace(".REF", ".orbocc")).read_atom()
+        except Exception:
             species = [Atom(s) for s in self.readline().split()[:ns]]
 
         # Total number of super-cells
@@ -59,7 +59,7 @@ class refSileScaleUp(SileScaleUp):
                 cell[0, :] /= nsc[0]
                 cell[1, :] /= nsc[1]
                 cell[2, :] /= nsc[2]
-        except:
+        except Exception:
             c = np.empty([3, 3], np.float64)
             c[0, 0] = 1. + cell[0]
             c[0, 1] = cell[5] / 2.
@@ -157,8 +157,8 @@ class restartSileScaleUp(refSileScaleUp):
         """
 
         try:
-            ref = get_sile(self.file.rsplit('restart', 1)[0] + 'REF').read_geometry()
-        except:
+            ref = get_sile(str(self.file).replace(".restart", ".REF")).read_geometry()
+        except Exception:
             ref = None
 
         restart = super().read_geometry()

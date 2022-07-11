@@ -309,22 +309,22 @@ class TestGeometry:
                                                         [1.42, 0, 0]])
         assert np.allclose(setup.g.oRij(0, 2), [1.42, 0, 0])
 
-    def test_cut(self, setup):
+    def test_untile_warns(self, setup):
         with pytest.warns(SislWarning) as warns:
-            assert len(setup.g.cut(1, 1)) == 2
-            assert len(setup.g.cut(2, 1)) == 1
-            assert len(setup.g.cut(2, 1, 1)) == 1
+            assert len(setup.g.untile(1, 1)) == 2
+            assert len(setup.g.untile(2, 1)) == 1
+            assert len(setup.g.untile(2, 1, 1)) == 1
         assert len(warns) == 2
 
-    def test_cut2(self, setup):
+    def test_untile_check_same(self, setup):
         with pytest.warns(SislWarning) as warns:
-            c1 = setup.g.cut(2, 1)
-            c2 = setup.g.cut(2, 1, 1)
+            c1 = setup.g.untile(2, 1)
+            c2 = setup.g.untile(2, 1, 1)
         assert len(warns) == 2
         assert np.allclose(c1.xyz[0, :], setup.g.xyz[0, :])
         assert np.allclose(c2.xyz[0, :], setup.g.xyz[1, :])
 
-    def test_cut3(self, setup):
+    def test_untile_algo(self, setup):
         nr = range(2, 5)
         g = setup.g.copy()
         for x in nr:
@@ -333,13 +333,32 @@ class TestGeometry:
                 gy = gx.tile(y, 1)
                 for z in nr:
                     gz = gy.tile(z, 2)
-                    G = gz.cut(z, 2)
+                    G = gz.untile(z, 2)
                     assert np.allclose(G.xyz, gy.xyz)
                     assert np.allclose(G.cell, gy.cell)
-                G = gy.cut(y, 1)
+                G = gy.untile(y, 1)
                 assert np.allclose(G.xyz, gx.xyz)
                 assert np.allclose(G.cell, gx.cell)
-            G = gx.cut(x, 0)
+            G = gx.untile(x, 0)
+            assert np.allclose(G.xyz, g.xyz)
+            assert np.allclose(G.cell, g.cell)
+
+    def test_unrepeat_algo(self, setup):
+        nr = range(2, 5)
+        g = setup.g.copy()
+        for x in nr:
+            gx = g.repeat(x, 0)
+            for y in nr:
+                gy = gx.repeat(y, 1)
+                for z in nr:
+                    gz = gy.repeat(z, 2)
+                    G = gz.unrepeat(z, 2)
+                    assert np.allclose(G.xyz, gy.xyz)
+                    assert np.allclose(G.cell, gy.cell)
+                G = gy.unrepeat(y, 1)
+                assert np.allclose(G.xyz, gx.xyz)
+                assert np.allclose(G.cell, gx.cell)
+            G = gx.unrepeat(x, 0)
             assert np.allclose(G.xyz, g.xyz)
             assert np.allclose(G.cell, g.cell)
 
@@ -556,12 +575,12 @@ class TestGeometry:
         assert np.allclose(setup.g.cell[1, :], s.cell[0, :])
 
     def test_center(self, setup):
-        one = setup.g.center(atoms=[0])
-        assert np.allclose(setup.g[0], one)
-        al = setup.g.center()
-        assert np.allclose(np.mean(setup.g.xyz, axis=0), al)
-        al = setup.g.center(what='mass')
-        al = setup.g.center(what='mm(xyz)')
+        g = setup.g.copy()
+        assert np.allclose(g[1], g.center(atoms=[1]))
+        assert np.allclose(np.mean(g.xyz, axis=0), g.center())
+        # in this case the pbc COM is equivalent to the simple one
+        assert np.allclose(g.center(what='mass'), g.center(what='mass:pbc'))
+        assert np.allclose(g.center(what='mm:xyz'), g.center(what='mm(xyz)'))
 
     def test_center_raise(self, setup):
         with pytest.raises(ValueError):
@@ -691,6 +710,24 @@ class TestGeometry:
         two = setup.g.scale(2)
         assert len(two) == len(setup.g)
         assert np.allclose(two.xyz[:, :] / 2., setup.g.xyz)
+
+    def test_scale_vector_abc(self, setup):
+        two = setup.g.scale([2, 1, 1], what="abc")
+        assert len(two) == len(setup.g)
+        # Check that cell has been scaled accordingly
+        assert np.allclose(two.cell[0] / 2., setup.g.cell[0])
+        assert np.allclose(two.cell[1:], setup.g.cell[1:])
+        # Now check that fractional coordinates are still the same
+        assert np.allclose(two.fxyz, setup.g.fxyz)
+
+    def test_scale_vector_xyz(self, setup):
+        two = setup.g.scale([2, 1, 1], what="xyz")
+        assert len(two) == len(setup.g)
+        # Check that cell has been scaled accordingly
+        assert np.allclose(two.cell[:, 0] / 2., setup.g.cell[:, 0])
+        assert np.allclose(two.cell[:, 1:], setup.g.cell[:, 1:])
+        # Now check that fractional coordinates are still the same
+        assert np.allclose(two.fxyz, setup.g.fxyz)
 
     def test_close1(self, setup):
         three = range(3)
@@ -1152,9 +1189,9 @@ class TestGeometry:
                 '--tile', '2', 'x',
                 '--tile', '2', 'y',
                 '--tile', '2', 'z',
-                '--cut', '2', 'z',
-                '--cut', '2', 'y',
-                '--cut', '2', 'x',
+                '--untile', '2', 'z',
+                '--untile', '2', 'y',
+                '--untile', '2', 'x',
         ]
         if kwargs.get('limit_arguments', True):
             opts.extend(['--rotate', '-90', 'x',
@@ -1250,10 +1287,10 @@ class TestGeometry:
         with pytest.raises(ValueError):
             g.as_primary(3)
 
-    def test_geometry_cut_raise_nondivisable(self):
+    def test_geometry_untile_raise_nondivisable(self):
         g = sisl_geom.graphene()
         with pytest.raises(ValueError):
-            g.cut(3, 0)
+            g.untile(3, 0)
 
     def test_geometry_iR_negative_R(self):
         g = sisl_geom.graphene()
@@ -1472,6 +1509,10 @@ def test_geometry_sort_group():
     assert np.allclose(BN.atoms.Z, BN2.atoms.Z)
     assert np.allclose(BN.atoms.Z, BN3.atoms.Z)
 
+    mass = bi.sort(group='mass')
+    Z = bi.sort(group='Z')
+    assert np.allclose(mass.atoms.Z, Z.atoms.Z)
+
 
 def test_geometry_sort_fail_keyword():
     with pytest.raises(ValueError):
@@ -1518,6 +1559,15 @@ def test_geometry_sanitize_atom_0_length():
     assert len(gr.axyz([])) == 0
 
 
+@pytest.mark.parametrize("atoms", [[True, False],
+                                   (True, False),
+                                   [0], (0,)
+])
+def test_geometry_sanitize_atom_other_bool(atoms):
+    gr = sisl_geom.graphene()
+    assert len(gr.axyz(atoms)) == 1
+
+
 def test_geometry_sanitize_atom_0_length_float_fail():
     gr = sisl_geom.graphene()
     with pytest.raises(IndexError):
@@ -1536,6 +1586,20 @@ def test_geometry_sanitize_orbs():
     assert np.allclose(bi._sanitize_orbs({bot: [1, 2]}), np.add.outer(bi.firsto[C_idx], [1, 2]).ravel())
 
 
+def test_geometry_sub_orbitals():
+    atom = Atom(6, [1, 2, 3])
+    gr = sisl_geom.graphene(atoms=atom)
+    assert gr.no == 6
+
+    # try and do sub
+    gr2 = gr.sub_orbital(atom, [atom.orbitals[0], atom.orbitals[2]])
+    assert gr2.atoms[0][0] == atom.orbitals[0]
+    assert gr2.atoms[0][1] == atom.orbitals[2]
+
+    gr2 = gr.sub_orbital(atom, atom.orbitals[1])
+    assert gr2.atoms[0][0] == atom.orbitals[1]
+
+
 def test_geometry_new_xyz(sisl_tmp):
     # test that Geometry.new works
     out = sisl_tmp('out.xyz', _dir)
@@ -1552,3 +1616,22 @@ def test_geometry_new_xyz(sisl_tmp):
     gr2 = gr.new(out)
     assert np.allclose(gr.xyz, gr2.xyz)
     assert gr == gr2
+
+
+def test_translate2uc():
+    gr = sisl_geom.graphene() * (2, 3, 1)
+    gr = gr.move([5, 5, 5])
+    gr2 = gr.translate2uc()
+    assert not np.allclose(gr.xyz, gr2.xyz)
+
+
+def test_translate2uc_axes():
+    gr = sisl_geom.graphene() * (2, 3, 1)
+    gr = gr.move([5, 5, 5])
+    gr_once = gr.translate2uc()
+    gr_individual = gr.translate2uc(axes=0)
+    assert not np.allclose(gr_once.xyz, gr_individual.xyz)
+    gr_individual = gr_individual.translate2uc(axes=1)
+    assert np.allclose(gr_once.xyz, gr_individual.xyz)
+    gr_individual = gr_individual.translate2uc(axes=2)
+    assert np.allclose(gr_once.xyz, gr_individual.xyz)

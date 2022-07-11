@@ -1,4 +1,4 @@
-# This Source Code Form is subject to the terms of the Mozilla Public
+# Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import pytest
@@ -22,6 +22,7 @@ def setup():
     return t()
 
 
+@pytest.mark.physics
 @pytest.mark.brillouinzone
 @pytest.mark.bz
 class TestBrillouinZone:
@@ -52,6 +53,24 @@ class TestBrillouinZone:
         bz = BrillouinZone(setup.s1, [[0]*3, [0.5]*3], [.5]*2)
         assert len(bz) == 2
         assert len(bz.copy()) == 2
+
+    def test_bz_volume_self(self):
+        bz = BrillouinZone(1.)
+        assert bz.volume(True)[1] == 0
+        bz = BrillouinZone(SuperCell(1, nsc=[3, 1, 1]))
+        assert bz.volume(True)[1] == 1
+        bz = BrillouinZone(SuperCell(1, nsc=[3, 3, 1]))
+        assert bz.volume(True)[1] == 2
+        bz = BrillouinZone(SuperCell(1, nsc=[3, 3, 3]))
+        assert bz.volume(True)[1] == 3
+
+    def test_bz_volume_direct(self):
+        bz = BrillouinZone(1.)
+        assert bz.volume(True, [0, 1])[1] == 2
+        assert bz.volume(True, [1])[1] == 1
+        assert bz.volume(True, [2, 1])[1] == 2
+        assert bz.volume(True, [2, 1, 0])[1] == 3
+        assert bz.volume(True, [])[1] == 0
 
     def test_bz_fail(self, setup):
         with pytest.raises(ValueError):
@@ -119,6 +138,23 @@ class TestBrillouinZone:
             assert np.allclose(val, np.arange(3) - 1)
         # Average
         assert np.allclose(bz.apply.average.eigh(), np.arange(3))
+
+    def test_bz_parametrize_integer(self, setup):
+        # parametrize for single integers
+        def func(parent, N, i):
+            return [i/N, 0, 0]
+        bz = BrillouinZone.parametrize(setup.s1, func, 10)
+        assert len(bz) == 10
+        assert np.allclose(bz.k[-1], [9/10, 0, 0])
+
+    def test_bz_parametrize_list(self, setup):
+        # parametrize for single integers
+        def func(parent, N, i):
+            return [i[0]/N[0], i[1]/N[1], 0]
+        bz = BrillouinZone.parametrize(setup.s1, func, [10, 2])
+        assert len(bz) == 20
+        assert np.allclose(bz.k[-1], [9/10, 1/2, 0])
+        assert np.allclose(bz.k[-2], [9/10, 0/2, 0])
 
     @pytest.mark.parametrize("N", [2, 3, 4, 5, 7])
     @pytest.mark.parametrize("centered", [True, False])
@@ -224,15 +260,36 @@ class TestBrillouinZone:
         bz2 = BandStructure(setup.s1, [[0]*2, [.5]*2], 300, ['A', 'C'])
         assert len(bz) == 300
 
-        bz3 = BandStructure(setup.s1, [[0]*2, [.5]*2], [150] * 2)
+        bz3 = BandStructure(setup.s1, [[0]*2, [.5]*2], [150])
         assert len(bz) == 300
         bz.lineartick()
         bz.lineark()
         bz.lineark(True)
 
-    def test_pbz2(self, setup):
-        bz = BandStructure(setup.s1, [[0]*3, [.25]*3, [.5]*3], 300)
-        assert len(bz) == 300
+    @pytest.mark.parametrize("n", range(3, 100, 10))
+    def test_pbz2(self, setup, n):
+        bz = BandStructure(setup.s1, [[0]*3, [.25]*3, [.5]*3], n)
+        assert len(bz) == n
+
+    def test_pbs_divisions(self, setup):
+        bz = BandStructure(setup.s1, [[0]*3, [.25]*3, [.5]*3], [10, 10])
+        assert len(bz) == 21
+
+    def test_pbs_missing_arguments(self, setup):
+        with pytest.raises(ValueError):
+            bz = BandStructure(setup.s1, divisions=[10, 10])
+
+    def test_pbs_deprecate_arguments(self, setup):
+        with pytest.deprecated_call():
+            bz = BandStructure(setup.s1, [[0]*3, [.25]*3, [.5]*3], division=[10, 10])
+
+    def test_pbs_fail(self, setup):
+        with pytest.raises(ValueError):
+            BandStructure(setup.s1, [[0]*3, [.5]*3, [.25] * 3], 1)
+        with pytest.raises(ValueError):
+            BandStructure(setup.s1, [[0]*3, [.5]*3, [.25] * 3], [1, 1, 1, 1])
+        with pytest.raises(ValueError):
+            BandStructure(setup.s1, [[0]*3, [.5]*3, [.25] * 3], [1, 1, 1])
 
     def test_as_simple(self):
         from sisl import geom, Hamiltonian
@@ -277,7 +334,7 @@ class TestBrillouinZone:
         asdarray = bz_da.eigh(coords=['orb'])
         assert asdarray.dims == ('k', 'orb')
 
-    def test_as_dataarray_unzip(self):
+    def test_as_dataarray_zip(self):
         pytest.importorskip("xarray", reason="xarray not available")
 
         from sisl import geom, Hamiltonian
@@ -290,7 +347,7 @@ class TestBrillouinZone:
         def wrap(es):
             return es.eig, es.DOS(E), es.PDOS(E)
 
-        with bz.apply.renew(unzip=True) as unzip:
+        with bz.apply.renew(zip=True) as unzip:
             eig, DOS, PDOS = unzip.ndarray.eigenstate(wrap=wrap)
             ds0 = unzip.dataarray.eigenstate(wrap=wrap, name=["eig", "DOS", "PDOS"])
             # explicitly create dimensions
@@ -310,6 +367,7 @@ class TestBrillouinZone:
         assert len(ds1.coords) < len(ds0.coords)
 
     def test_pathos(self):
+        pytest.skip("BrillouinZone.apply(pool=True|int) scales extremely bad and may cause stall")
         pytest.importorskip("pathos", reason="pathos not available")
 
         from sisl import geom, Hamiltonian
@@ -319,9 +377,19 @@ class TestBrillouinZone:
 
         bz = MonkhorstPack(H, [2, 2, 2], trs=False)
 
+        # try and determine a sensible
+        import os
+        try:
+            import psutil
+            nprocs = len(psutil.Process().cpu_affinity()) // 2
+        except Exception:
+            nprocs = os.cpu_count() // 2
+        omp_num_threads = os.environ.get("OMP_NUM_THREADS")
+
         # Check that the ObjectDispatcher works
         apply = bz.apply
-        papply = bz.apply.renew(pool=True)
+
+        papply = bz.apply.renew(pool=nprocs)
         assert str(apply) != str(papply)
 
         for method in ["iter", "average", "sum", "array", "list", "oplist"]:
@@ -330,7 +398,15 @@ class TestBrillouinZone:
             # list.
             # So if a generator has some clean-up code one has to use zip_longest
             # regardless of method
-            for v1, v2 in zip(papply[method].eigh(), apply[method].eigh()):
+            os.environ["OMP_NUM_THREADS"] = "1"
+            V1 = papply[method].eigh()
+            if omp_num_threads is None:
+                del os.environ["OMP_NUM_THREADS"]
+            else:
+                os.environ["OMP_NUM_THREADS"] = omp_num_threads
+            V2 = apply[method].eigh()
+
+            for v1, v2 in zip(V1, V2):
                 assert np.allclose(v1, v2)
 
         # Check that the MethodDispatcher works
@@ -426,7 +502,7 @@ class TestBrillouinZone:
             return es.eig, es.DOS(E)
 
         eig0, DOS0 = zip(*bz.apply.list.eigenstate(wrap=wrap))
-        with bz.apply.renew(unzip=True) as k_unzip:
+        with bz.apply.renew(zip=True) as k_unzip:
             eig1, DOS1 = k_unzip.list.eigenstate(wrap=wrap)
             eig2, DOS2 = k_unzip.array.eigenstate(wrap=wrap)
 
@@ -524,9 +600,9 @@ class TestBrillouinZone:
         assert np.allclose(bz1.k, bz2.k)
         assert np.allclose(bz1.weight, bz2.weight)
         assert bz1.parent == bz2.parent
-        assert np.allclose(bz1.point, bz2.point)
-        assert np.allclose(bz1.division, bz2.division)
-        assert bz1.name == bz2.name
+        assert np.allclose(bz1.points, bz2.points)
+        assert np.allclose(bz1.divisions, bz2.divisions)
+        assert bz1.names == bz2.names
 
     @pytest.mark.parametrize("n", [[0, 0, 1], [0.5] * 3])
     def test_param_circle(self, n):
@@ -547,3 +623,39 @@ class TestBrillouinZone:
         bz.replace([0] * 3, bz_gamma)
         assert len(bz) == N_bz + N_bz_gamma - 1
         assert bz.weight.sum() == pytest.approx(1.)
+
+    def test_bs_jump(self):
+        g = geom.graphene()
+        bs = BandStructure(g, [[0]*3, [0.5, 0, 0], None, [0]*3, [0., 0.5, 0]], 30, ['A', 'B', 'C', 'D'])
+        assert len(bs) == 30
+
+    def test_bs_jump_skipping_none(self):
+        g = geom.graphene()
+        bs1 = BandStructure(g, [[0]*3, [0.5, 0, 0], None, [0]*3, [0., 0.5, 0]], 30, ['A', 'B', 'C', 'D'])
+        bs2 = BandStructure(g, [[0]*3, [0.5, 0, 0], None, [0]*3, [0., 0.5, 0], None], 30, ['A', 'B', 'C', 'D'])
+        assert np.allclose(bs1.k, bs2.k)
+
+    def test_bs_insert_jump(self):
+        g = geom.graphene()
+        nk = 10
+        bs = BandStructure(g, [[0]*3, [0.5, 0, 0], None, [0]*3, None, [0., 0.5, 0]], nk, ['A', 'B', 'C', 'D'])
+        d = np.empty([nk])
+        d_jump = bs.insert_jump(d)
+        assert d_jump.shape == (nk+2,)
+
+        d = np.empty([nk, 5])
+        d_jump = bs.insert_jump(d)
+        assert d_jump.shape == (nk+2, 5)
+        assert np.isnan(d_jump).sum() == 10
+
+        d_jump = bs.insert_jump(d.T, value=np.inf)
+        assert d_jump.shape == (5, nk+2)
+        assert np.isinf(d_jump).sum() == 10
+
+    def test_bs_insert_jump_fail(self):
+        g = geom.graphene()
+        nk = 10
+        bs = BandStructure(g, [[0]*3, [0.5, 0, 0], None, [0]*3, [0., 0.5, 0]], nk, ['A', 'B', 'C', 'D'])
+        d = np.empty([nk+1])
+        with pytest.raises(ValueError):
+            bs.insert_jump(d)

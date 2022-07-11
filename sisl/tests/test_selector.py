@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import pytest
+import sys
 
 import time
 import numpy as np
@@ -10,6 +11,8 @@ from sisl import TimeSelector
 
 
 @pytest.mark.selector
+@pytest.mark.xfail(sys.platform.startswith("darwin"),
+                   reason="Sleep on MacOS is not consistent causing erroneous fails.")
 class TestSelector:
 
     def sleep(self, *args):

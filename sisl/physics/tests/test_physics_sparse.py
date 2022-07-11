@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import pytest
+import sys
 
 import math as m
 import numpy as np
@@ -9,7 +10,7 @@ import numpy as np
 from sisl import geom, Atom, Geometry, Spin, SislWarning
 from sisl.physics.sparse import SparseOrbitalBZ, SparseOrbitalBZSpin
 
-pytestmark = pytest.mark.sparse
+pytestmark = [pytest.mark.physics, pytest.mark.sparse]
 
 
 def _get():
@@ -428,6 +429,7 @@ def test_sparse_orbital_transform_basis():
     assert np.abs(Mcsr[-1] - Mt.tocsr(-1)).sum() == 0
 
 
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Data type cannot be float128")
 def test_sparse_orbital_transform_combinations():
     M = SparseOrbitalBZSpin(geom.graphene(), spin='polarized', orthogonal=False, dtype=np.int32)
     M.construct(([0.1, 1.44], [(3, 2, 1), (2, 1, 0)]))
@@ -498,3 +500,22 @@ def test_sparse_orbital_transform_fail():
 
     with pytest.raises(ValueError):
         M.transform(np.zeros([2, 2]), spin='unpolarized')
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.complex64, np.complex128])
+@pytest.mark.only
+def test_sparseorbital_spin_dtypes(dtype):
+    gr = geom.graphene()
+
+    M = SparseOrbitalBZSpin(gr, spin=Spin("unpolarized", dtype))
+    assert M.dtype == dtype
+
+    M = SparseOrbitalBZSpin(gr, spin=Spin("polarized", dtype))
+    assert M.dtype == dtype
+
+    if dtype not in (np.complex64, np.complex128):
+        M = SparseOrbitalBZSpin(gr, spin=Spin("non-colinear", dtype))
+        assert M.dtype == dtype
+
+        M = SparseOrbitalBZSpin(gr, spin=Spin("spin-orbit", dtype))
+        assert M.dtype == dtype

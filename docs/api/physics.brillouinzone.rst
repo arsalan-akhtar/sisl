@@ -99,9 +99,10 @@ and thus is unable to convert this into an equivalent `numpy.ndarray`. Additiona
 this can not be merged together in a single `numpy.ndarray` since the shapes of the returned
 quantities are not commensurate. One cannot concatenate the 3 different quantities.
 
-To accomblish this one may use an ``unzip`` flag:
+To accomblish this one may use an ``zip`` flag where the two lines are equivalent:
 
->>> DOS, PDOS, v = mp.apply.array.renew(unzip=True).eigenstate(wrap=wrap_multiple, eta=True)
+>>> DOS, PDOS, v = mp.apply.array.renew(zip=True).eigenstate(wrap=wrap_multiple, eta=True)
+>>> DOS, PDOS, v = mp.apply(zip=True).array.eigenstate(wrap=wrap_multiple, eta=True)
 
 and the data is unpacked as wanted.
 
@@ -121,12 +122,12 @@ This requires you also have the package ``pathos`` available.
 The above will run in parallel using a default number of processors
 in priority:
 
-1. Environment variable ``SISL_NPROCS``
+1. Environment variable ``SISL_NUM_PROCS``
 2. Return value of ``os.cpu_count()``.
 
 Note that this may interfere with BLAS implementation which defaults
 to use all CPU's for threading. The total processors/threads that will
-be created is ``SISL_NPROCS * OMP_NUM_THREADS``. Try and ensure this is below
+be created is ``SISL_NUM_PROCS * OMP_NUM_THREADS``. Try and ensure this is below
 the actual core-count of your machine (or the number of requested cores in a
 HPC environment).
 
