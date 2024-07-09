@@ -13,7 +13,7 @@ VASP
    eigenvalSileVASP
    chgSileVASP
    locpotSileVASP
-   outSileVASP
+   outcarSileVASP
 
 
 .. autosummary::
@@ -21,6 +21,4 @@ VASP
    :hidden:
 
    SileVASP
-   SileCDFVASP
    SileBinVASP
-

@@ -14,11 +14,15 @@
 #
 #  python stats.py $0.profile
 #
+from __future__ import annotations
+
 import cProfile
 import pstats
 import sys
-import sisl
+
 import numpy as np
+
+import sisl
 
 pr = cProfile.Profile()
 pr.disable()
@@ -62,6 +66,6 @@ pr.dump_stats(f"{sys.argv[0]}.profile")
 
 stat = pstats.Stats(pr)
 # We sort against total-time
-stat.sort_stats('tottime')
+stat.sort_stats("tottime")
 # Only print the first 20% of the routines.
-stat.print_stats('sisl', 0.2)
+stat.print_stats("sisl", 0.2)

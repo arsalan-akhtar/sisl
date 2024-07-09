@@ -1,29 +1,34 @@
 include MANIFEST.in
 include LICENSE
-include CHANGELOG
+include CHANGELOG.md
 include README.md
+
 include setup.py
 include pyproject.toml
-
-graft doc
-
-graft sisl
-
-include sisl/info.py
-
-recursive-include toolbox *.py *.md README
-
+include setup.cfg
 exclude DEPLOY.md
-global-exclude *.html
-global-exclude *.sh
-global-exclude .git*
-global-exclude *.so
-global-exclude *.pyc
 
+prune .git
 prune .github
 prune benchmarks
 prune deprecated
 prune developments
 prune ci
 prune files
+prune build
+prune _skbuild
+
+# forcefully add this one, not really needed
+graft docs
+prune docs/build
+prune docs/**/generated
+graft src
+include src/sisl/_version.py
+include data
+
 prune __pycache__
+
+# lastly, remove all these files
+global-exclude *.py[cod] __pycache__ *.so *.sh
+global-exclude *.html .git* CMakeLists.txt
+

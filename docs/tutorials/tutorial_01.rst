@@ -17,7 +17,7 @@ The *only* required information is the atomic coordinates::
    }
 
 this will create a `Geometry` object with 1 Hydrogen atom with a single orbital
-(default if not specified), and a supercell of 10 A in each Cartesian direction.
+(default if not specified), and a lattice of 10 A in each Cartesian direction.
 When printing a `Geometry` object a list of information is printed in an
 XML-like fashion. ``na`` corresponds to the total number of atoms in the
 geometry, while ``no`` refers to the total number of orbitals.
@@ -34,7 +34,7 @@ To specify the atomic specie one may do::
 
    >>> single_carbon = Geometry([[0., 0., 0.]], Atom('C'))
 
-which changes the Hydrogen to a Carbon atom. See <link to atom_01.rst> on how to create different atoms.
+which changes the Hydrogen to a Carbon atom.
    
 To create a geometry with two different atomic species, for instance a chain
 of alternating Natrium an Chloride atoms, separated by 1.6 A one may do::

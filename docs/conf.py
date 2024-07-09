@@ -14,27 +14,29 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
+from __future__ import annotations
+
+import logging
 import os
 import pathlib
+import sys
 from datetime import date
+
+_log = logging.getLogger("sisl_doc")
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 # make sure the source version is preferred (#3567)
-_root = pathlib.Path(__file__).absolute().parent.parent
-try:
-    import sisl
-    print(f"Located sisl here: {sisl.__path__}")
-except:
-    _pp = os.environ.get("PYTHONPATH", "")
-    if len(_pp) > 0:
-        os.environ["PYTHONPATH"] = f"{_root}:{_pp}"
-    else:
-        os.environ["PYTHONPATH"] = f"{_root}"
-    del _pp
-sys.path.insert(0, str(_root))
+_root = pathlib.Path(__file__).absolute().parent.parent / "src"
+
+# If building this on RTD, mock out fortran sources
+on_rtd = os.environ.get("READTHEDOCS", "false").lower() == "true"
+if on_rtd:
+    os.environ["SISL_NUM_PROCS"] = "1"
+    os.environ["SISL_VIZ_NUM_PROCS"] = "1"
+
+# sys.path.insert(0, str(_root))
 
 # Print standard information about executable and path...
 print("python exec:", sys.executable)
@@ -42,47 +44,70 @@ print("sys.path:", sys.path)
 
 import sisl
 
+print(f"Located sisl here: {sisl.__path__}")
+
+# General information about the project.
+project = "sisl"
+author = "Nick Papior"
+copyright = f"2015-{date.today().year}, {author}"
+
 
 # -- General configuration ------------------------------------------------
-
-# If your documentation needs a minimal Sphinx version, state it here.
-#needs_sphinx = '1.0'
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.extlinks',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.todo',
-    'sphinx.ext.viewcode',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.coverage",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.extlinks",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.todo",
+    # allows to view code directly in the homepage
+    "sphinx.ext.viewcode",
+    # toggle-button on info/warning/...
+    "sphinx_togglebutton",
+    # allow copybutton on code-blocks
+    "sphinx_copybutton",
+    # design, grids etc.
+    "sphinx_design",
+    "sphinxcontrib.jquery",  # a bug in 4.1.0 means search didn't work without explicit extension
+    "sphinx_inline_tabs",
     # plotting and advanced usage
-    'matplotlib.sphinxext.plot_directive',
-    'IPython.sphinxext.ipython_directive',
-    'IPython.sphinxext.ipython_console_highlighting',
-    'sphinx.ext.inheritance_diagram',
-    'nbsphinx',
-    'sphinx_gallery.load_style',
+    "matplotlib.sphinxext.plot_directive",
+    "IPython.sphinxext.ipython_directive",
+    "IPython.sphinxext.ipython_console_highlighting",
+    "sphinx.ext.inheritance_diagram",
+    "nbsphinx",
+    "sphinx_gallery.load_style",
+    # bibtex stuff
+    "sphinxcontrib.bibtex",
 ]
 napoleon_numpy_docstring = True
+napoleon_use_param = True
+
+
+# The default is MathJax 3.
+# In case we want to revert to 2.7.7, then use the below link:
+# mathjax_path = "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
+
+# Short-hand for :doi:
+extlinks = {
+    "issue": ("https://github.com/zerothi/sisl/issues/%s", "issue #%s"),
+    "pull": ("https://github.com/zerothi/sisl/pull/%s", "pull request #%s"),
+    "doi": ("https://doi.org/%s", "%s"),
+}
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 # source_suffix = ['.rst', '.md']
-source_suffix = '.rst'
-
-# The encoding of source files.
-#source_encoding = 'utf-8-sig'
-
-# The master toctree document.
-master_doc = 'index'
+source_suffix = ".rst"
 
 # prepend/append this snippet in _all_ sources
 rst_prolog = """
@@ -90,275 +115,209 @@ rst_prolog = """
 """
 # Insert the links into the epilog (globally)
 # This means that every document has access to the links
-rst_epilog = ''.join(open('epilog.dummy').readlines())
+rst_epilog = """
+.. Internal links:
+.. _sisl-git: https://github.com/zerothi/sisl/
+.. _pr: https://github.com/zerothi/sisl/pulls
+.. _issue: https://github.com/zerothi/sisl/issues
+.. _sisl-discord: https://discord.gg/5XnFXFdkv2
+.. _gh-releases: https://github.com/zerothi/sisl/releases
+.. _pypi-releases: https://pypi.org/project/sisl
+.. _conda-releases: https://anaconda.org/conda-forge/sisl
+.. _sisl-doi: https://doi.org/10.5281/zenodo.597181
+.. _sisl-files: https://github.com/zerothi/sisl-files
+
+.. These are external links:
+.. _MPL: https://www.mozilla.org/en-US/MPL/2.0/
+.. _Cython: https://cython.org/
+.. _Python: https://www.python.org/
+.. _NetCDF: https://www.unidata.ucar.edu/netcdf
+.. _cmake: https://cmake.org
+.. _scikit-build-core: https://scikit-build-core.readthedocs.io/en/latest/
+.. _netcdf4-py: https://github.com/Unidata/netcdf4-python
+.. _numpy: https://www.numpy.org/
+.. _scipy: https://docs.scipy.org/doc/scipy
+.. _pyparsing: https://github.com/pyparsing/pyparsing
+.. _matplotlib: https://matplotlib.org/
+.. _pytest: https://docs.pytest.org/en/stable/
+.. _pathos: https://github.com/uqfoundation/pathos
+.. _tqdm: https://github.com/tqdm/tqdm
+.. _xarray: https://xarray.pydata.org/en/stable/index.html
+.. _workshop: https://github.com/zerothi/ts-tbt-sisl-tutorial
+.. _plotly: https://plotly.com/python/
+
+.. DFT codes
+.. _atom: https://siesta-project.org/SIESTA_MATERIAL/Pseudos/atom_licence.html
+.. _Siesta: https://siesta-project.org
+.. _TranSiesta: https://siesta-project.org
+.. _TBtrans: https://siesta-project.org
+.. _BigDFT: http://www.bigdft.org
+.. _OpenMX: http://www.openmx-square.org
+.. _VASP: https://www.vasp.at
+.. _ScaleUp: https://www.secondprinciples.unican.es
+.. _GULP: https://nanochemistry.curtin.edu.au/gulp/news.cfm
+
+.. Other programs heavily used
+.. _ASE: https://wiki.fysik.dtu.dk/ase
+.. _kwant: https://kwant-project.org
+.. _XCrySDen: http://www.xcrysden.org
+.. _VMD: https://www.ks.uiuc.edu/Research/vmd
+.. _Molden: http://www.cmbi.ru.nl/molden
+.. _Wannier90: http://www.wannier.org
+"""
 
 autosummary_generate = True
 
-# General information about the project.
-project = 'sisl'
-author = 'Nick Papior'
-copyright = f"2015-{date.today().year}, {author}"
-
 # If building this on RTD, mock out fortran sources
-on_rtd = os.environ.get('READTHEDOCS', 'false').lower() == 'true'
 if on_rtd:
     nbsphinx_allow_errors = True
 else:
-    # TODO change to False
-    nbsphinx_allow_errors = True
+    nbsphinx_allow_errors = False
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
-try:
-    import subprocess
-    pv = subprocess.Popen(['git', 'describe'],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = pv.communicate()
-    out = out[1:]
-    out = out.split('-')
-    if len(out) > 1:
-        version = '-'.join(out[0:2])
-    else:
-        version = out[0]
-except:
-    version = 'latest'
+version = str(sisl.__version__)
+if "dev" in version:
+    _log.info("got {version=}")
+    v_pre, v_suf = version.split("+")
+    # remove dev (we don't need step)
+    v_pre = v_pre.split(".dev")[0]
+    # remove g in gHASH
+    v_suf = v_suf[1:]
+    if "." in v_suf:
+        v_suf = v_suf.split(".")[0]
+    version = f"{v_pre}-{v_suf}"
 release = version
+print(f"sisl version {version}")
 
-# The language for content autogenerated by Sphinx. Refer to documentation
-# for a list of supported languages.
-#
-# This is also used if you do content translation via gettext catalogs.
-# Usually you set "language" from the command line for these cases.
-language = None
 
 # Add __init__ classes to the documentation
-autoclass_content = 'class'
+autoclass_content = "class"
 autodoc_default_options = {
-    'members': True,
-    'undoc-members': True,
-    'special-members': '__init__,__call__',
-    'inherited-members': True,
-    'show-inheritance': True,
+    "members": True,
+    "undoc-members": True,
+    "special-members": "__init__,__call__",
+    "inherited-members": True,
+    "show-inheritance": True,
 }
 
-# There are two options for replacing |today|: either, you set today to some
-# non-false value, then it is used:
-#today = ''
-# Else, today_fmt is used as the format for a strftime call.
-#today_fmt = '%B %d, %Y'
+# typehints only shows the minimal class, instead
+# of full module paths
+# The linkage is still problematic, and a known issue:
+#  https://github.com/sphinx-doc/sphinx/issues/10455
+# autodoc will likely get a rewrite. Until then..
+autodoc_typehints_format = "short"
+
+# Show type-hints in both the signature
+# and in the variable list
+autodoc_typehints = "both"
+
+# Automatically create the autodoc_type_aliases
+autodoc_type_aliases = dict()
+_type_aliases_skip = set(dir(sisl.typing._numpy))
+_type_aliases_skip.add("npt")
+
+for name in dir(sisl.typing):
+    if name.startswith("_"):
+        continue
+    if name in _type_aliases_skip:
+        continue
+
+    autodoc_type_aliases[name] = f"sisl.typing.{name}"
+
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['build', '**/setupegg.py', '**/setup.rst', '**/tests', '**.ipynb_checkpoints']
-exclude_patterns.append("GUI with Python Demo.ipynb")
+exclude_patterns = [
+    "build",
+    "**/setupegg.py",
+    "**/setup.rst",
+    "**/tests",
+    "**.ipynb_checkpoints",
+]
+exclude_patterns.append("**/GUI with Python Demo.ipynb")
+exclude_patterns.append("**/Building a plot class.ipynb")
+for _venv in pathlib.Path(".").glob("*venv*"):
+    exclude_patterns.append(str(_venv.name))
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
-default_role = 'autolink'
+default_role = "autolink"
+
+# prefer to use the smallest name, always
+python_use_unqualified_type_names = True
 
 # If true, '()' will be appended to :func: etc. cross-reference text.
 add_function_parentheses = False
-
-# If true, the current module name will be prepended to all description
-# unit titles (such as .. function::).
-#add_module_names = True
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.
 show_authors = False
 
-# The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
-
 # A list of ignored prefixes for module index sorting.
-modindex_common_prefix = ['sisl.']
-
-# If true, keep warnings as "system message" paragraphs in the built documents.
-#keep_warnings = False
+modindex_common_prefix = ["sisl."]
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = True
+todo_include_todos = False
 
 
 # -- Options for HTML output ----------------------------------------------
 
 html_theme = "sphinx_rtd_theme"
+# html_theme = "furo"
 
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-html_theme_options = {}
-
-# Add any paths that contain custom themes here, relative to this directory.
-#html_theme_path = []
+if html_theme == "furo":
+    html_theme_options = {
+        "source_repository": "https://github.com/zerothi/sisl/",
+        "source_branch": "main",
+        "source_directory": "docs/",
+    }
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = f"sisl {release} documentation"
+html_title = f"sisl {release}"
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
 html_short_title = "sisl"
 
-# The name of an image file (relative to this directory) to place at the top
-# of the sidebar.
-#html_logo = None
-
-# The name of an image file (within the static path) to use as favicon of the
-# docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
-# pixels large.
-#html_favicon = None
-
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-if os.path.exists('_static'):
-    html_static_path = ['_static']
+if os.path.exists("_static"):
+    html_static_path = ["_static"]
 else:
     html_static_path = []
 
-
-# Add any extra paths that contain custom files (such as robots.txt or
-# .htaccess) here, relative to this directory. These files are copied
-# directly to the root of the documentation.
-#html_extra_path = []
-
-# If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
-# using the given strftime format.
-#html_last_updated_fmt = '%b %d, %Y'
-
-# Custom sidebar templates, maps document names to template names.
-#html_sidebars = {}
-
-# Additional templates that should be rendered to pages, maps page names to
-# template names.
-#html_additional_pages = {}
-
-# If false, no module index is generated.
-#html_domain_indices = True
+# Add any extra style files that we need
+html_css_files = [
+    "css/custom_styles.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css",
+]
 
 # If false, no index is generated.
 html_use_modindex = True
 html_use_index = True
 
-# If true, the index is split into individual pages for each letter.
-#html_split_index = False
-
-# If true, links to the reST sources are added to the pages.
-#html_show_sourcelink = True
-
-# If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
-#html_show_sphinx = True
-
-# If true, "(C) Copyright ..." is shown in the HTML footer. Default is True.
-#html_show_copyright = True
-
-# If true, an OpenSearch description file will be output, and all pages will
-# contain a <link> tag referring to it.  The value of this option must be the
-# base URL from which the finished HTML is served.
-#html_use_opensearch = ''
-
-# This is the file name suffix for HTML files (e.g. ".xhtml").
-#html_file_suffix = None
-
-# Language to be used for generating the HTML full-text search index.
-# Sphinx supports the following languages:
-#   'da', 'de', 'en', 'es', 'fi', 'fr', 'hu', 'it', 'ja'
-#   'nl', 'no', 'pt', 'ro', 'ru', 'sv', 'tr'
-#html_search_language = 'en'
-
-# A dictionary with options for the search language support, empty by default.
-# Now only 'ja' uses this config value
-#html_search_options = {'type': 'default'}
-
-# The name of a javascript file (relative to the configuration directory) that
-# implements a search results scorer. If empty, the default will be used.
-#html_search_scorer = 'scorer.js'
-
-# Output file base name for HTML help builder.
-htmlhelp_basename = 'sisl'
-
 # -- Options for LaTeX output ---------------------------------------------
 
 latex_elements = {
-# The paper size ('letterpaper' or 'a4paper').
-'papersize': 'a4paper',
-
-# The font size ('10pt', '11pt' or '12pt').
-'pointsize': '10pt',
-
-# Additional stuff for the LaTeX preamble.
-#'preamble': '',
-
-# Latex figure (float) alignment
-'figure_align': '!htbp',
+    # The paper size ('letterpaper' or 'a4paper').
+    "papersize": "a4paper",
+    # The font size ('10pt', '11pt' or '12pt').
+    "pointsize": "11pt",
+    # Additional stuff for the LaTeX preamble.
+    "preamble": r"",
+    # Latex figure (float) alignment
+    "figure_align": "!htbp",
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  (master_doc, 'sisl.tex', 'sisl Documentation',
-   'Nick Papior', 'manual'),
+    ("index", "sisl.tex", "sisl Documentation", "Nick Papior", "manual"),
 ]
-
-# The name of an image file (relative to this directory) to place at the top of
-# the title page.
-#latex_logo = None
-
-# For "manual" documents, if this is true, then toplevel headings are parts,
-# not chapters.
-#latex_use_parts = False
-
-# If true, show page references after internal links.
-#latex_show_pagerefs = False
-
-# If true, show URL addresses after external links.
-#latex_show_urls = False
-
-# Documents to append as an appendix to all manuals.
-#latex_appendices = []
-
-# If false, no module index is generated.
-#latex_domain_indices = True
-
-
-# -- Options for manual page output ---------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [
-    (master_doc, 'sisl', 'sisl Documentation',
-     [author], 1)
-]
-
-# If true, show URL addresses after external links.
-#man_show_urls = False
-
-
-# -- Options for Texinfo output -------------------------------------------
-
-# Grouping the document tree into Texinfo files. List of tuples
-# (source start file, target name, title, author,
-#  dir menu entry, description, category)
-texinfo_documents = [
-  (master_doc, 'sisl', 'sisl Documentation',
-   author, None, 'One line description of project.',
-   'Miscellaneous'),
-]
-
-# Documents to append as an appendix to all manuals.
-#texinfo_appendices = []
-
-# If false, no module index is generated.
-#texinfo_domain_indices = True
-
-# How to display URL addresses: 'footnote', 'no', or 'inline'.
-#texinfo_show_urls = 'footnote'
-
-# If true, do not generate a @detailmenu in the "Top" node's menu.
-#texinfo_no_detailmenu = False
-
 
 #####
 # Custom sisl documentation stuff down here
@@ -367,9 +326,47 @@ texinfo_documents = [
 # These two options should solve the "toctree contains reference to nonexisting document"
 # problem.
 # See here: numpydoc #69
-#class_members_toctree = False
+# class_members_toctree = False
 # If this is false we do not have double method sections
-#numpydoc_show_class_members = False
+# numpydoc_show_class_members = False
+
+# Attributes section will be formatted as methods
+numpydoc_attributes_as_param_list = False
+
+# Plot directives for matplotlib
+plot_include_source = True
+plot_formats = [("png", 90)]
+plot_pre_code = """\
+import numpy as np
+import matplotlib.pyplot as plt
+import sisl as si"""
+
+
+# Define header content
+header = f"""\
+.. currentmodule:: sisl
+
+.. ipython:: python
+   :suppress:
+
+   import numpy as np
+   import sisl as si
+   import matplotlib.pyplot as plt
+
+   np.random.seed(123987)
+   np.set_printoptions(precision=4, suppress=True)
+"""
+
+# IPython executables
+ipython_execlines = [
+    "import numpy as np",
+    "import sisl as si",
+    "import matplotlib.pyplot as plt",
+]
+
+html_context = {
+    "header": header,
+}
 
 # -----------------------------------------------------------------------------
 # Intersphinx configuration
@@ -377,35 +374,88 @@ texinfo_documents = [
 # Python, numpy, scipy and matplotlib specify https as the default objects.inv
 # directory. So please retain these links.
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3/', None),
-    'numpy': ('https://numpy.org/doc/stable/', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
-    'matplotlib': ('https://matplotlib.org/', None),
-    'xarray': ('https://xarray.pydata.org/en/stable/', None),
-    'plotly': ('https://plotly.com/python-api-reference/', None),
-    'skimage': ('https://scikit-image.org/docs/stable', None),
-    'pandas': ('https://pandas.pydata.org/pandas-docs/stable', None),
+    "python": ("https://docs.python.org/3/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None),
+    "plotly": ("https://plotly.com/python-api-reference/", None),
+    "skimage": ("https://scikit-image.org/docs/stable", None),
+    "pandas": ("https://pandas.pydata.org/pandas-docs/stable", None),
 }
+
+
+# ---------------------
+# BibTeX information
+# ---------------------
+bibtex_bibfiles = ["references.bib", "sisl_uses.bib"]
+bibtex_default_style = "plain"
+bibtex_tooltips = True
+
+
+# Allow a year-month-author sorting
+import calendar
+
+from pybtex.style.formatting.plain import Style as PlainStyle
+from pybtex.style.sorting.author_year_title import SortingStyle as AYTSortingStyle
+
+
+class YearMonthAuthorSortStyle(AYTSortingStyle):
+    def sorting_key(self, entry):
+        ayt = super().sorting_key(entry)
+
+        year = self._year_number(entry)
+        month = self._month_number(entry)
+
+        return (-year, -month, ayt[0], ayt[2])
+
+    def _year_number(self, entry):
+        year = entry.fields.get("year", 0)
+        try:
+            return int(year)
+        except ValueError:
+            pass
+        return 0
+
+    def _month_number(self, entry):
+        month = entry.fields.get("month", "")
+        for ext in ("abbr", "name"):
+            lst = getattr(calendar, f"month_{ext}")[:]
+            if month in lst:
+                return lst.index(month)
+        return 0
+
+
+class RevYearPlain(PlainStyle):
+    default_sorting_style = "sort_rev_year"
+
+
+import pybtex
+
+pybtex.plugin.register_plugin(
+    "pybtex.style.sorting", "sort_rev_year", YearMonthAuthorSortStyle
+)
+pybtex.plugin.register_plugin("pybtex.style.formatting", "rev_year", RevYearPlain)
 
 # Tell nbsphinx to wait, at least X seconds for each cell
 nbsphinx_timeout = 600
 
 # Insert a link to download the IPython notebook
 nbsphinx_prolog = r"""
-{% set docname = env.doc2path(env.docname, base="docs") %}
+{% set docname = "docs/" + env.doc2path(env.docname, base=False) %}
 
 .. raw:: html
 
      <div align="right">
-     Download IPython notebook <a href="https://raw.githubusercontent.com/zerothi/sisl/master/{{ docname }}"> here</a>.
-     <span style="white-space: nowrap;"><a href="https://mybinder.org/v2/gh/zerothi/sisl/master?filepath={{ docname|e }}"><img alt="Binder badge" src="https://mybinder.org/badge_logo.svg" style="vertical-align:text-bottom"></a>.</span>
+     <a href="https://raw.githubusercontent.com/zerothi/sisl/main/{{ docname }}"><img alt="ipynb download badge" src="https://img.shields.io/badge/download-ipynb-blue.svg" style="vertical-align:text-bottom"></a>
+     &nbsp;
+     <a href="https://mybinder.org/v2/gh/zerothi/sisl/main?filepath={{ docname|e }}"><img alt="Binder badge" src="https://mybinder.org/badge_logo.svg" style="vertical-align:text-bottom"></a>
      </div>
 
 """
 
-nbsphinx_thumbnails = {
-    "visualization/plotly/basic-tutorials/GUI with Python Demo": "_static/visualization/plotly/basic-tutorials/GUIScreenshot.png"
-}
+nbsphinx_thumbnails = {}
 
 import inspect
 
@@ -418,11 +468,14 @@ def sisl_method2class(meth):
             if cls.__dict__.get(meth.__name__) is meth:
                 return cls
     if inspect.isfunction(meth):
-        cls = getattr(inspect.getmodule(meth),
-                      meth.__qualname__.split('.<locals>', 1)[0].rsplit('.', 1)[0])
+        cls = getattr(
+            inspect.getmodule(meth),
+            meth.__qualname__.split(".<locals>", 1)[0].rsplit(".", 1)[0],
+        )
         if isinstance(cls, type):
             return cls
     return None  # not required since None would have been implicitly returned anyway
+
 
 # My custom detailed instructions for not documenting stuff
 
@@ -432,25 +485,40 @@ def sisl_skip(app, what, name, obj, skip, options):
     # When adding routines here, please also add them
     # to the _templates/autosummary/class.rst file to limit
     # the documentation.
-    if what == 'class':
-        if name in ['ArgumentParser', 'ArgumentParser_out',
-                    'is_keys', 'key2case', 'keys2case',
-                    'line_has_key', 'line_has_keys', 'readline',
-                    'step_to',
-                    'isDataset', 'isDimension', 'isGroup',
-                    'isRoot', 'isVariable']:
+    if what == "class":
+        if name in [
+            "ArgumentParser",
+            "ArgumentParser_out",
+            "is_keys",
+            "key2case",
+            "keys2case",
+            "line_has_key",
+            "line_has_keys",
+            "readline",
+            "step_to",
+            "isDataset",
+            "isDimension",
+            "isGroup",
+            "isRoot",
+            "isVariable",
+        ]:
+            _log.info(f"skip: {obj=} {what=} {name=}")
             return True
-    #elif what == "attribute":
+    # elif what == "attribute":
     #    return True
+    if "InfoAttr" in name:
+        _log.info(f"skip: {what=} {name=}")
+        return True
 
     # check for special methods (we don't want all)
-    if (name.startswith("_") and
-        name not in autodoc_default_options.get("special-members", '').split(',')):
+    if name.startswith("_") and name not in autodoc_default_options.get(
+        "special-members", ""
+    ).split(","):
         return True
 
     try:
         cls = sisl_method2class(obj)
-    except:
+    except Exception:
         cls = None
 
     # Quick escape
@@ -461,31 +529,36 @@ def sisl_skip(app, what, name, obj, skip, options):
     # Apparently they will be linked directly.
     # Now we have some things to disable the output of
     if "projncSile" in cls.__name__:
-        if name in ["current", "current_parameter", "shot_noise",
-                    "noise_power", "fano", "density_matrix",
-                    "write_tbtav",
-                    "orbital_COOP", "atom_COOP",
-                    "orbital_COHP", "atom_COHP"]:
+        if name in [
+            "current",
+            "current_parameter",
+            "shot_noise",
+            "noise_power",
+            "fano",
+            "density_matrix",
+            "write_tbtav",
+            "orbital_COOP",
+            "atom_COOP",
+            "orbital_COHP",
+            "atom_COHP",
+        ]:
+            _log.info(f"skip: {obj=} {what=} {name=}")
             return True
     if "SilePHtrans" in cls.__name__:
-        if name in ["chemical_potential", "electron_temperature",
-                    "kT", "current", "current_parameter", "shot_noise",
-                    "noise_power"]:
+        if name in [
+            "chemical_potential",
+            "electron_temperature",
+            "kT",
+            "current",
+            "current_parameter",
+            "shot_noise",
+            "noise_power",
+        ]:
+            _log.info(f"skip: {obj=} {what=} {name=}")
             return True
     return skip
 
 
 def setup(app):
     # Setup autodoc skipping
-    app.connect('autodoc-skip-member', sisl_skip)
-
-    import subprocess as sp
-    if os.path.isfile('../conf_prepare.sh'):
-        print("# Running ../conf_prepare.sh")
-        sp.call(['bash', '../conf_prepare.sh'])
-        print("\n# Done running ../conf_prepare.sh")
-    elif os.path.isfile('conf_prepare.sh'):
-        print("# Running conf_prepare.sh")
-        sp.call(['bash', 'conf_prepare.sh'])
-        print("\n# Done running conf_prepare.sh")
-    print("")
+    app.connect("autodoc-skip-member", sisl_skip)

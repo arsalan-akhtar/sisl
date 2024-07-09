@@ -1,2 +1,5 @@
-# Export hash variable into setup.py
-setup.py export-subst
+CITATION.cff export-subst
+pyproject.toml export-subst
+.git_archival.txt export-subst
+*.ipynb filter=strip-notebook-output
+

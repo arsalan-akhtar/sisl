@@ -5,13 +5,27 @@ submodules:
     - files
 
 build:
-  image: latest
+  os: "ubuntu-lts-latest"
+  apt_packages:
+    - cmake
+    - build-essential
+    - gcc
+    - gfortran
+  tools:
+    python: "latest"
 
 sphinx:
   configuration: docs/conf.py
   fail_on_warning: false
 
-conda:
-  environment: ci/doc.yml
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        - analysis
+        - viz
+        - test
+        - docs
 
 formats: []

@@ -5,10 +5,10 @@ A sisl `Geometry` object may easily be converted to ASE objects and thus directl
 plotted.
 
 
-.. code::
+.. code-block::
 
    import sisl
-   import ase.visualize.view as view
+   from ase.visualize import view
 
    geom = sisl.geom.graphene()
    view(geom.to.ase())

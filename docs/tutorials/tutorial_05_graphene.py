@@ -1,6 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+from __future__ import annotations
+
 from sisl import *
 
 graphene = geom.graphene()
@@ -22,7 +24,7 @@ H[1, 0, (0, 1)] = 2.7
 print(H)
 
 # Create band-structure for the supercell.
-band = BandStructure(H, [[0., 0.], [2./3, 1./3], [0.5, 0.5], [0., 0.]], 300)
+band = BandStructure(H, [[0.0, 0.0], [2.0 / 3, 1.0 / 3], [0.5, 0.5], [0.0, 0.0]], 300)
 
 # Calculate eigenvalues of the band-structure
 eigs = band.eigh()
@@ -31,12 +33,12 @@ eigs = band.eigh()
 import matplotlib.pyplot as plt
 
 plt.figure()
-plt.title('Bandstructure of graphene, nearest neighbour')
-plt.xlabel('k')
-plt.ylabel('Eigenvalue')
+plt.title("Bandstructure of graphene, nearest neighbor")
+plt.xlabel("k")
+plt.ylabel("Eigenvalue")
 
 # Generate linear-k for plotting (ensures correct spacing)
 lband = band.lineark()
 for i in range(eigs.shape[1]):
     plt.plot(lband, eigs[:, i])
-plt.savefig('05_graphene_bs.png')
+plt.savefig("05_graphene_bs.png")

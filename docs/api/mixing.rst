@@ -3,7 +3,7 @@
 Mixing self-consistent quantities
 =================================
 
-.. currentmodule:: sisl.mixing
+.. module:: sisl.mixing
 
 Mixing various quantities in self-consistent manners are quite frequent.
 This module enables a variety of methods based on the Pulay (DIIS) mixing
@@ -20,8 +20,11 @@ The basic classes that are used internally are
 .. autosummary::
    :toctree: generated/
 
-   Metric
    History
+   BaseMixer
+   BaseWeightMixer
+   BaseHistoryWeightMixer
+   StepMixer
 
 
 Mixing algorithms
@@ -31,6 +34,7 @@ Mixing algorithms
    :toctree: generated/
 
    LinearMixer
+   AndersonMixer
    DIISMixer
    PulayMixer
    AdaptiveDIISMixer

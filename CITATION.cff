@@ -1,0 +1,29 @@
+version: 0.15.0
+commit: "v0.15.0"
+date-released: "2024-02-04"
+cff-version: 1.2.0
+message: "Please cite sisl in any paper to acknowledge and support development."
+type: software
+authors:
+  - family-names: Papior
+    given-names: Nick
+    orcid: "https://orcid.org/0000-0003-3038-1855"
+    alias: zerothi
+  - family-names: Febrer
+    given-names: Pol
+    orcid: "https://orcid.org/0000-0003-0904-2234"
+    alias: pfebrer
+title: sisl
+identifiers:
+  - description: "Collection DOI for any sisl version."
+    type: doi
+    value: 10.5281/zenodo.597181
+url: https://github.com/zerothi/sisl
+repository-code: https://github.com/zerothi/sisl
+license: MPL-2.0
+keywords:
+  - physics
+  - tight-binding
+  - DFT
+  - LCAO
+  - NEGF
