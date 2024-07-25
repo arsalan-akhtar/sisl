@@ -9,6 +9,8 @@ we hit release version 1.0.0.
 ## [0.15.0] - YYYY-MM-DD
 
 ### Added
+- `Geometry.find_nsc`, alternate method for calculating `nsc` with more options
+- `sisl._debug_info` for more complete debug information
 - `axes` argument added to `derivative` to only calculate on a subset
   of directions (can greatly improve performance for some systems)
 - `operator` argument added to `derivative` to apply an operator
@@ -62,6 +64,7 @@ we hit release version 1.0.0.
 - A new `AtomicMatrixPlot` to plot sparse matrices, #668
 
 ### Fixed
+- buildable for numpy>2, #791
 - `BrillouinZone.tocartesian()` now defaults to `k=self.k`
 - reading XV/STRUCT files from fdf siles could cause problems, #778
 - `Geometry.[ao][us]c2[su]c` methods now retains the input shapes (unless `unique=True`)
@@ -110,6 +113,7 @@ we hit release version 1.0.0.
 - removed `Selector` and `TimeSelector`, they were never used internally
 
 ### Changed
+- `Lattice.parameters` now returns a 2-tuple of ``length, angles``
 - units of `conductivity` has changed to S / Ang
 - `conductivity` is deprecated, use `ahc` and `shc` instead
 - `berry_curvature` has completely changed, checks it API
