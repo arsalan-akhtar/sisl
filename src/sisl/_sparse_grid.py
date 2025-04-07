@@ -1,4 +1,7 @@
-from typing import Optional, Tuple, Union
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+from typing import Optional, Union
 
 import numpy as np
 from scipy.sparse import issparse, spmatrix
@@ -56,7 +59,7 @@ class Sparse4DGrid:
         return new_indices, new_shape
 
     def reduce_dimension(
-        self, weights: Optional[np.ndarray] = None, reduce_grid: Tuple[int, ...] = ()
+        self, weights: Optional[np.ndarray] = None, reduce_grid: tuple[int, ...] = ()
     ) -> Union[Grid, np.ndarray]:
         """Reduces the extra dimension on the grid, possibly applying weights.
 
@@ -258,7 +261,7 @@ class SparseGridOrbitalBZ(Sparse4DGrid):
         return Overlap.fromsp(self.geometry, overlap * dvolume)
 
     def reduce_orbitals(
-        self, weights: np.ndarray, k: Tuple[float, float, float] = (0, 0, 0), **kwargs
+        self, weights: np.ndarray, k: tuple[float, float, float] = (0, 0, 0), **kwargs
     ) -> Union[Grid, np.ndarray]:
         """Reduces the orbitals dimension, applying phases if needed.
 
@@ -320,7 +323,7 @@ class SparseGridOrbitalBZ(Sparse4DGrid):
         self,
         weights: Union[np.ndarray, SparseCSR, spmatrix],
         weights_lattice: Lattice,
-        reduce_grid: Tuple[int, ...] = (),
+        reduce_grid: tuple[int, ...] = (),
         out: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Reduces the orbital dimension by taking products of orbitals with weights.
@@ -358,6 +361,19 @@ class SparseGridOrbitalBZ(Sparse4DGrid):
             The output grid. If ``out`` is not ``None``, it will be the same as ``out``. Otherwise
             it will be a newly created array.
         """
+        if weights.shape[0] != self.geometry.no:
+            raise ValueError(
+                f"Mismatch in weights array shape: Number of unit cell orbitals is {weights.shape[0]}, while orbital values are stored for {self.geometry.no} orbitals."
+            )
+        elif weights.shape[1] != self.geometry.no_s:
+            raise ValueError(
+                f"Mismatch in weights array shape: The number of unit cell orbitals ({self.geometry.no})"
+                f" is correct, but supercell orbitals in the weights array is {weights.shape[1]},"
+                f" while it should be {self.geometry.no_s}. It is likely that the weights array"
+                f" has been obtained from a matrix with the wrong number of auxiliary cells."
+                f"  The correct number of auxiliary cells is {self.geometry.nsc}."
+            )
+
         csr = self._csr
 
         # Find out the reduced shape, and the reduce factor. The reduced factor is the number

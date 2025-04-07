@@ -5,10 +5,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once
 we hit release version 1.0.0.
 
+## Any later versions
 
-## [0.15.0] - YYYY-MM-DD
+This changelog format is deprecated.
+
+The changelog is now processed in `towncrier` format.
+
+Please see `changes/README.rst` for details.
+
+
+## [0.15.2] - 2024-11-06
 
 ### Added
+- added `timesSileSiesta` which can read siesta TIMES output
+- Parsing of total Mulliken charges in `stdoutSileSiesta`, #691
+
+### Fixed
+- reading charges from Siesta 5.2 output files, #856
+- a read problem for very big simulations (related to `orbindxSileSiesta`)
+- bug-fix for `tbtSileTBtrans.Eindex` handling of integers, #829
+  This is a regression fix, integers will now be handled differently
+  than prior releases.
+  A warning is raised to inform users.
+- fixed warning raised when reading electronic structure without Ef, #826
+- fixed precision writing of energies in GF files (siesta), #827
+- fixed reading `HSetupOnly` HSX files from Siesta, #828
+- fixed reading stresses and forces from `stdoutSileSiesta`
+  Note that generally the forces/stresses in the *Final* section of the
+  output will **not** be returned. Only if there are no other forces/stresses
+  in the output file.
+
+### Changed
+- `tbtSileTBtrans.Eindex` changed, see #829 for details.
+
+
+## [0.15.1] - 2024-09-10
+
+### Added
+- enabled `lowdin` to return the Lowdin transformation matrix, and also
+  allow it to be calculated using SVD
+
+### Fixed
+- bugfix for wrong call `Lattice.to.cuboid` which caused wrong densities, #821
+
+
+## [0.15.0] - 2024-08-13
+
+### Added
+- conversion of list-like elements to `Lattice`
+- vacuum argument for all `sisl.geom` methods that can use it
 - `Geometry.find_nsc`, alternate method for calculating `nsc` with more options
 - `sisl._debug_info` for more complete debug information
 - `axes` argument added to `derivative` to only calculate on a subset
@@ -44,7 +89,7 @@ we hit release version 1.0.0.
 - `bond_order` for `DensityMatrix` objects, #507
 - better error messages when users request quantities not calculated by Siesta/TBtrans
 - functional programming of the basic sisl classes
-  Now many of the `Geometry|Lattice|Grid.* manipulation routines which
+  Now many of the `Geometry|Lattice|Grid.*` manipulation routines which
   returns new objects, are subjected to dispatch methods.
   E.g.
 
@@ -64,6 +109,7 @@ we hit release version 1.0.0.
 - A new `AtomicMatrixPlot` to plot sparse matrices, #668
 
 ### Fixed
+- PEP-585 compliant
 - buildable for numpy>2, #791
 - `BrillouinZone.tocartesian()` now defaults to `k=self.k`
 - reading XV/STRUCT files from fdf siles could cause problems, #778
@@ -113,6 +159,7 @@ we hit release version 1.0.0.
 - removed `Selector` and `TimeSelector`, they were never used internally
 
 ### Changed
+- internal test structure, should improve future progress
 - `Lattice.parameters` now returns a 2-tuple of ``length, angles``
 - units of `conductivity` has changed to S / Ang
 - `conductivity` is deprecated, use `ahc` and `shc` instead

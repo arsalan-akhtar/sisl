@@ -13,42 +13,71 @@
 #
 # All configuration values have a default; values that are commented out
 # serve to show the default.
-
+"""sisl documentation"""
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 import pathlib
 import sys
 from datetime import date
+from functools import wraps
+from textwrap import indent
 
 _log = logging.getLogger("sisl_doc")
 
+_doc_root = pathlib.Path(__file__).absolute().parent
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 # make sure the source version is preferred (#3567)
-_root = pathlib.Path(__file__).absolute().parent.parent / "src"
+_root = _doc_root.parent
+_src = _root / "src"
 
-# If building this on RTD, mock out fortran sources
-on_rtd = os.environ.get("READTHEDOCS", "false").lower() == "true"
-if on_rtd:
-    os.environ["SISL_NUM_PROCS"] = "1"
-    os.environ["SISL_VIZ_NUM_PROCS"] = "1"
-
-# sys.path.insert(0, str(_root))
+# add the exts folder
+sys.path.insert(1, str(_doc_root))
 
 # Print standard information about executable and path...
 print("python exec:", sys.executable)
 print("sys.path:", sys.path)
 
+import numpy as np
+
 import sisl
 
-print(f"Located sisl here: {sisl.__path__}")
+print(f"sisl: {sisl.__version__}, {sisl.__file__}")
+# Extract debug-information, for completeness sake.
+sisl.debug_info()
+import pybtex
+
+# Figure out if we can locate the tests:
+sisl_files_tests = sisl.get_environ_variable("SISL_FILES_TESTS")
+print(f"SISL_FILES_TESTS: {sisl_files_tests}")
+print("  is directory: ", sisl_files_tests.is_dir())
+if sisl_files_tests.is_dir():
+    print("  content:")
+    for _child in sisl_files_tests.iterdir():
+        print(f"    ./{_child.relative_to(sisl_files_tests)}")
+
+
+# Setting up generic things
+
+# If building this on RTD, mock out fortran sources
+on_rtd = os.environ.get("READTHEDOCS", "false").lower() == "true"
+_doc_skip = list(
+    map(lambda x: x.lower(), os.environ.get("_SISL_DOC_SKIP", "").split(","))
+)
+skip_notebook = "notebook" in _doc_skip
+
+# If building this on RTD, mock out fortran sources
+if on_rtd:
+    os.environ["SISL_NUM_PROCS"] = "1"
+
 
 # General information about the project.
 project = "sisl"
-author = "Nick Papior"
+author = "sisl developers"
 copyright = f"2015-{date.today().year}, {author}"
 
 
@@ -58,9 +87,11 @@ copyright = f"2015-{date.today().year}, {author}"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    # Small extension just to measure the speed of compilation.
+    # "sphinx.ext.duration",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
-    "sphinx.ext.coverage",
+    # "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
     "sphinx.ext.extlinks",
     "sphinx.ext.mathjax",
@@ -68,6 +99,8 @@ extensions = [
     "sphinx.ext.todo",
     # allows to view code directly in the homepage
     "sphinx.ext.viewcode",
+    # Enable redirections
+    "sphinxext.rediraffe",
     # toggle-button on info/warning/...
     "sphinx_togglebutton",
     # allow copybutton on code-blocks
@@ -86,21 +119,49 @@ extensions = [
     # bibtex stuff
     "sphinxcontrib.bibtex",
 ]
+
+
+# Define the prefix block that should not be copied in code-blocks
+copybutton_prompt_text = r"\$ |\$> |>>> |\.\.\. "
+copybutton_prompt_is_regexp = True
+copybutton_line_continuation_character = "\\"
+
+# We use numpy style docs
+napoleon_google_docstring = False
 napoleon_numpy_docstring = True
-napoleon_use_param = True
+# Converts type-definitions to references
+napoleon_preprocess_types = True
+# Puts notes in boxes
+napoleon_use_admonition_for_notes = True
 
+# If numpydoc is available, then let sphinx report warnings
+numpydoc_validation_checks = {"all", "EX01", "SA01", "ES01"}
 
-# The default is MathJax 3.
-# In case we want to revert to 2.7.7, then use the below link:
-# mathjax_path = "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"
+# These two options should solve the "toctree contains reference to nonexisting document"
+# problem.
+# See here: numpydoc #69
+# class_members_toctree = False
+# If this is false we do not have double method sections
+# numpydoc_show_class_members = False
+
+# Attributes section will be formatted as methods
+numpydoc_attributes_as_param_list = False
+
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
+from sisl_modules.github_links import GHFormat, GHLink
 
-# Short-hand for :doi:
+
+def _link_constructor(type):
+    return GHLink(type), GHFormat(type)
+
+
 extlinks = {
-    "issue": ("https://github.com/zerothi/sisl/issues/%s", "issue #%s"),
-    "pull": ("https://github.com/zerothi/sisl/pull/%s", "pull request #%s"),
+    # If these are changed, please update pyproject.toml under towncrier section
+    "issue": _link_constructor("issues"),
+    "pull": _link_constructor("pull"),
+    "discussion": _link_constructor("discussions"),
     "doi": ("https://doi.org/%s", "%s"),
 }
 
@@ -168,12 +229,6 @@ rst_epilog = """
 
 autosummary_generate = True
 
-# If building this on RTD, mock out fortran sources
-if on_rtd:
-    nbsphinx_allow_errors = True
-else:
-    nbsphinx_allow_errors = False
-
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
@@ -197,10 +252,30 @@ autoclass_content = "class"
 autodoc_default_options = {
     "members": True,
     "undoc-members": True,
-    "special-members": "__init__,__call__",
+    "special-members": "__call__",
     "inherited-members": True,
     "show-inheritance": True,
 }
+
+# How to show the class signature
+#  mixed: signature with class name
+#  separated: signature as method
+autodoc_class_signature = "separated"
+
+# alphabetical | groupwise | bysource
+# How automodule + autoclass orders content.
+# Right now, the current way sisl documents things
+# is basically groupwise. So lets be explicit
+autodoc_member_order = "groupwise"
+
+# Do not evaluate things that are defaulted in arguments.
+# Show them *as-is*.
+autodoc_preserve_defaults = True
+
+# Show type-hints in only the description, in this way the
+# signature is readable and the argument order can easily
+# be inferred.
+autodoc_typehints = "description"
 
 # typehints only shows the minimal class, instead
 # of full module paths
@@ -209,28 +284,61 @@ autodoc_default_options = {
 # autodoc will likely get a rewrite. Until then..
 autodoc_typehints_format = "short"
 
-# Show type-hints in both the signature
-# and in the variable list
-autodoc_typehints = "both"
-
 # Automatically create the autodoc_type_aliases
-autodoc_type_aliases = dict()
-_type_aliases_skip = set(dir(sisl.typing._numpy))
-_type_aliases_skip.add("npt")
+# This is handy for commonly used terminologies.
+# It currently puts everything into a `<>` which
+# is sub-optimal (i.e. one cannot do "`numpy.ndarray` or `any`")
+# Perhaps just a small tweak and it works.
+autodoc_type_aliases = {
+    # general terms
+    "array-like": "~numpy.ndarray",
+    "array_like": "~numpy.ndarray",
+    "int-like": "int or ~numpy.ndarray",
+    "float-like": "float or ~numpy.ndarray",
+    "sequence": "sequence",
+    "np.ndarray": "~numpy.ndarray",
+    "ndarray": "~numpy.ndarray",
+}
+_type_aliases_skip = set()
 
-for name in dir(sisl.typing):
-    if name.startswith("_"):
+
+def has_under(name: str):
+    return name.startswith("_")
+
+
+# Retrive all typings
+try:
+    from numpy.typing import __all__ as numpy_types
+except ImportError:
+    numpy_types = []
+try:
+    from sisl.typing import __all__ as sisl_types
+except ImportError:
+    sisl_types = []
+
+for name in numpy_types:
+    if name in _type_aliases_skip:
         continue
+    autodoc_type_aliases[f"npt.{name}"] = f"~numpy.typing.{name}"
+
+
+for name in sisl_types:
     if name in _type_aliases_skip:
         continue
 
-    autodoc_type_aliases[name] = f"sisl.typing.{name}"
+    # sisl typing should be last, in this way we ensure
+    # that sisl typing is always preferred
+    autodoc_type_aliases[name] = f"~sisl.typing.{name}"
 
+# just for ease...
+napoleon_type_aliases = autodoc_type_aliases
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 exclude_patterns = [
+    "template.rst",
     "build",
+    "_build",
     "**/setupegg.py",
     "**/setup.rst",
     "**/tests",
@@ -240,6 +348,13 @@ exclude_patterns.append("**/GUI with Python Demo.ipynb")
 exclude_patterns.append("**/Building a plot class.ipynb")
 for _venv in pathlib.Path(".").glob("*venv*"):
     exclude_patterns.append(str(_venv.name))
+
+if skip_notebook:
+    # Just exclude *ALL* notebooks to speed-up the documentation
+    # creation.
+    exclude_patterns.append("**/*.ipynb")
+
+remove_from_toctrees = ["generated/*"]
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
@@ -256,7 +371,15 @@ add_function_parentheses = False
 show_authors = False
 
 # A list of ignored prefixes for module index sorting.
-modindex_common_prefix = ["sisl."]
+modindex_common_prefix = [
+    "sisl.",
+    "sisl.geom",
+    "sisl.physics",
+    "sisl.viz",
+    "sisl.unit",
+    "sisl.typing",
+    "sisl.shape",
+]
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
@@ -276,10 +399,11 @@ if html_theme == "furo":
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = f"sisl {release}"
+# We do not need to put in the version.
+# It is located elsewhere
+html_title = "sisl"
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
-html_short_title = "sisl"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -299,7 +423,12 @@ html_css_files = [
 html_use_modindex = True
 html_use_index = True
 
-# -- Options for LaTeX output ---------------------------------------------
+
+# Redirects of moved pages
+rediraffe_redirects = {
+    "contribute.rst": "dev/index.rst",
+    "visualization/viz_module/index.rst": "visualization/index.rst",
+}
 
 latex_elements = {
     # The paper size ('letterpaper' or 'a4paper').
@@ -316,22 +445,12 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    ("index", "sisl.tex", "sisl Documentation", "Nick Papior", "manual"),
+    ("index", "sisl.tex", project, author, "manual"),
 ]
 
 #####
 # Custom sisl documentation stuff down here
 #####
-
-# These two options should solve the "toctree contains reference to nonexisting document"
-# problem.
-# See here: numpydoc #69
-# class_members_toctree = False
-# If this is false we do not have double method sections
-# numpydoc_show_class_members = False
-
-# Attributes section will be formatted as methods
-numpydoc_attributes_as_param_list = False
 
 # Plot directives for matplotlib
 plot_include_source = True
@@ -339,7 +458,12 @@ plot_formats = [("png", 90)]
 plot_pre_code = """\
 import numpy as np
 import matplotlib.pyplot as plt
-import sisl as si"""
+import sisl as si
+import plotly.io as pio
+np.random.seed(123987)
+np.set_printoptions(precision=4, suppress=True)
+pio.renderers.default = "notebook_connected"
+"""
 
 
 # Define header content
@@ -349,22 +473,17 @@ header = f"""\
 .. ipython:: python
    :suppress:
 
-   import numpy as np
-   import sisl as si
-   import matplotlib.pyplot as plt
-
-   np.random.seed(123987)
-   np.set_printoptions(precision=4, suppress=True)
+{indent(plot_pre_code, "   ")}
 """
 
 # IPython executables
-ipython_execlines = [
-    "import numpy as np",
-    "import sisl as si",
-    "import matplotlib.pyplot as plt",
-]
+ipython_execlines = plot_pre_code.splitlines()
 
 html_context = {
+    "github_user": "zerothi",
+    "github_repo": "sisl",
+    "github_version": "main",
+    "doc_path": "docs",
     "header": header,
 }
 
@@ -439,25 +558,31 @@ pybtex.plugin.register_plugin(
 pybtex.plugin.register_plugin("pybtex.style.formatting", "rev_year", RevYearPlain)
 
 # Tell nbsphinx to wait, at least X seconds for each cell
-nbsphinx_timeout = 600
+nbsphinx_timeout = 30
 
 # Insert a link to download the IPython notebook
 nbsphinx_prolog = r"""
-{% set docname = "docs/" + env.doc2path(env.docname, base=False) %}
+{% set docname = "docs/" + env.doc2path(env.docname, base=None) %}
 
 .. raw:: html
 
-     <div align="right">
-     <a href="https://raw.githubusercontent.com/zerothi/sisl/main/{{ docname }}"><img alt="ipynb download badge" src="https://img.shields.io/badge/download-ipynb-blue.svg" style="vertical-align:text-bottom"></a>
-     &nbsp;
-     <a href="https://mybinder.org/v2/gh/zerothi/sisl/main?filepath={{ docname|e }}"><img alt="Binder badge" src="https://mybinder.org/badge_logo.svg" style="vertical-align:text-bottom"></a>
-     </div>
+    <div align="right">
+    <a href="https://raw.githubusercontent.com/zerothi/sisl/main/{{ docname }}">
+        <img alt="ipynb download badge"
+            src="https://img.shields.io/badge/download-ipynb-blue.svg"
+            style="vertical-align:text-bottom">
+    </a>
+    &nbsp;
+    <a href="https://mybinder.org/v2/gh/zerothi/sisl/main?filepath={{ docname|e }}">
+       <img alt="Binder badge"
+            src="https://mybinder.org/badge_logo.svg"
+            style="vertical-align:text-bottom">
+    </a>
+    </div>
 
 """
 
 nbsphinx_thumbnails = {}
-
-import inspect
 
 
 def sisl_method2class(meth):
@@ -467,6 +592,7 @@ def sisl_method2class(meth):
         for cls in inspect.getmro(meth.__self__.__class__):
             if cls.__dict__.get(meth.__name__) is meth:
                 return cls
+
     if inspect.isfunction(meth):
         cls = getattr(
             inspect.getmodule(meth),
@@ -477,41 +603,262 @@ def sisl_method2class(meth):
     return None  # not required since None would have been implicitly returned anyway
 
 
+autosummary_context = {
+    "sisl_dispatch_attributes": [
+        "plot",
+        "apply",
+        "to",
+        "new",
+    ],
+    "sisl_skip_methods": [
+        "ArgumentParser",
+        "ArgumentParser_out",
+        "is_keys",
+        "key2case",
+        "keys2case",
+        "line_has_key",
+        "line_has_keys",
+        "readline",
+        "step_to",
+        "step_either",
+        "isDataset",
+        "isDimension",
+        "isGroup",
+        "isRoot",
+        "isVariable",
+        "InfoAttr",
+    ],
+}
+
+
+# Run hacks to ensure the documentation shows proper
+# documentation.
+def assign_nested_attribute(cls: object, attribute_path: str, attribute: object):
+    """Sets a nested attribute to a class with a placeholder name.
+
+    It takes `cls` and sets the full `attribute_path` (with possible `.` in it)
+    to `attribute`.
+
+    It then also does this recursively for the objects located in the nested attribute.
+    """
+
+    # This sets the *full* attribute to the class
+    setattr(cls, attribute_path, attribute)
+    _log.info("adding %s attribute to class %s" % (attribute_path, cls.__name__))
+    attribute_paths = attribute_path.split(".")
+
+    if len(attribute_paths) > 1:
+        attribute_cls = getattr(cls, attribute_paths[0])
+        _log.info(
+            "adding %s attribute to class %s"
+            % (".".join(attribute_paths[1:]), attribute_cls.__name__)
+        )
+        setattr(attribute_cls, ".".join(attribute_paths[1:]), attribute)
+
+
+def assign_nested_method(
+    cls: object, method_path: str, method, signature_add_self: bool = False
+):
+    """Takes a nested method, wraps it to make sure is of function type and creates a nested attribute in the owner class."""
+
+    @wraps(method)
+    def wrapped_method(*args, **kwargs):
+        return method(*args, **kwargs)
+
+    if signature_add_self:
+        wrapper_sig = inspect.signature(wrapped_method)
+        wrapped_method.__signature__ = wrapper_sig.replace(
+            parameters=[
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_ONLY),
+                *wrapper_sig.parameters.values(),
+            ]
+        )
+
+    # Make the method assigned as
+    assign_nested_attribute(cls, method_path, wrapped_method)
+
+    # I don't really see why this is required?
+    head, tail, *_ = method_path.split(".")
+    setattr(
+        getattr(cls, head),
+        tail,
+        wrapped_method,
+    )
+
+
+def assign_class_dispatcher_methods(
+    cls: object,
+    dispatcher_name: Union[str, tuple[str, str]],
+    signature_add_self: bool = False,
+    as_attributes: bool = False,
+):
+    """Document all methods in a dispatcher class as nested methods in the owner class."""
+
+    if isinstance(dispatcher_name, str):
+        dispatcher_name = (dispatcher_name, "dispatch")
+
+    dispatcher_name, method_name = dispatcher_name
+    dispatcher = getattr(cls, dispatcher_name)
+
+    _log.info("assign_class_dispatcher_methods found dispatcher: {dispatcher}")
+    for key, method in dispatcher._dispatchs.items():
+        if not isinstance(key, str):
+            # TODO do not know yet what to do with object types used as extractions
+            continue
+
+        if method_name is None:
+            dispatch = method
+        else:
+            dispatch = getattr(method, method_name)
+
+        path = f"{dispatcher_name}.{key}"
+        _log.info("assign_class_dispatcher_methods assigning attribute: {path}")
+        # if dispatcher_name == "new":
+        #    print(cls, dispatcher_name, path, method, dispatch, dispatch.__doc__)
+        # if dispatcher_name == "to":
+        #    print(cls, dispatcher_name, path, method, dispatch, dispatch.__doc__)
+        if as_attributes:
+            assign_nested_attribute(cls, path, dispatch)
+        else:
+            assign_nested_method(
+                cls,
+                path,
+                dispatch,
+                signature_add_self=signature_add_self,
+            )
+
+
 # My custom detailed instructions for not documenting stuff
+# Run through all classes in sisl, extract attributes which
+# are subclasses of the AbstractDispatcher.
+
+_TRAVERSED = set()
+
+
+def is_sisl_object(obj):
+    """Check whether an object is coming from the sisl module."""
+    try:
+        # for objects
+        return obj.__module__.startswith("sisl")
+    except:
+        pass
+    try:
+        # for modules
+        return obj.__name__.startswith("sisl")
+    except:
+        pass
+    return False
+
+
+def yield_objects(module):
+    global _TRAVERSED
+
+    for name, member in inspect.getmembers(module):
+
+        # We need to sort out things that are
+        # originating from the sisl module. We don't care
+        # about external modules here...
+        if not is_sisl_object(member):
+            continue
+
+        if inspect.ismodule(member):
+            # Never run through a module twice.
+            # We will likely import modules again and again,
+            # thus creating infinite loops.
+            if name not in _TRAVERSED:
+                _TRAVERSED.add(name)
+                yield from yield_objects(member)
+
+        elif inspect.isclass(member):
+            if name not in _TRAVERSED:
+                _TRAVERSED.add(name)
+                yield member
+
+
+def yield_types(obj: object, classes):
+    """Yield any attributes/methods in `obj` which is has AbstractDispatcher as
+    a baseclass."""
+    for name in dir(obj):
+
+        # False-positives could be Abstract methods etc.
+        if not hasattr(obj, name):
+            _log.info("skipping obj.%s due to hasattr error" % name)
+            continue
+
+        # Do not parse privates
+        if name.startswith("_"):
+            continue
+
+        # get the actual attribute
+        attr = getattr(obj, name)
+
+        for istype in (issubclass, isinstance):
+            # print("check", obj, attr, name, classes)
+            try:
+                if istype(attr, classes):
+                    yield name, attr
+                    break
+            except:
+                pass
+
+
+_found_dispatch_attributes = set()
+for obj in yield_objects(sisl):
+
+    for name, attr in yield_types(obj, sisl._dispatcher.AbstractDispatcher):
+
+        # If it is a plot, document the dispatch class itself, because it contains the right
+        # documentation. Also in that case add self to the signature so that sphinx doesn't
+        # hide the first argument
+        if name in ["plot"]:
+            dispatch_name = (name, None)
+            signature_add_self = True
+        else:
+            dispatch_name = name
+            signature_add_self = False
+
+        # Fix the class dispatchers methods
+        assign_class_dispatcher_methods(
+            obj,
+            dispatch_name,
+            as_attributes=name in ["apply"],
+            signature_add_self=signature_add_self,
+        )
+        # Collect all the different names where a dispatcher is associated.
+        # In this way we die if we add a new one, without documenting it!
+        _found_dispatch_attributes.add(name)
+
+    for name, attr in yield_types(
+        obj, (sisl.io._multiple.SileBound, sisl.io._multiple.SileBinder)
+    ):
+
+        assign_nested_attribute(obj, name, attr.__wrapped__)
+
+
+if (
+    len(
+        diff := _found_dispatch_attributes
+        - set(autosummary_context["sisl_dispatch_attributes"])
+    )
+    > 0
+):
+    raise ValueError(f"Found more sets than defined: {diff}")
 
 
 def sisl_skip(app, what, name, obj, skip, options):
-    global autodoc_default_options
+    global autodoc_default_options, autosummary_context
     # When adding routines here, please also add them
     # to the _templates/autosummary/class.rst file to limit
     # the documentation.
     if what == "class":
-        if name in [
-            "ArgumentParser",
-            "ArgumentParser_out",
-            "is_keys",
-            "key2case",
-            "keys2case",
-            "line_has_key",
-            "line_has_keys",
-            "readline",
-            "step_to",
-            "isDataset",
-            "isDimension",
-            "isGroup",
-            "isRoot",
-            "isVariable",
-        ]:
+        if name in autosummary_context["sisl_skip_methods"]:
             _log.info(f"skip: {obj=} {what=} {name=}")
             return True
     # elif what == "attribute":
     #    return True
-    if "InfoAttr" in name:
-        _log.info(f"skip: {what=} {name=}")
-        return True
 
     # check for special methods (we don't want all)
-    if name.startswith("_") and name not in autodoc_default_options.get(
+    if has_under(name) and name not in autodoc_default_options.get(
         "special-members", ""
     ).split(","):
         return True
@@ -544,13 +891,16 @@ def sisl_skip(app, what, name, obj, skip, options):
         ]:
             _log.info(f"skip: {obj=} {what=} {name=}")
             return True
-    if "SilePHtrans" in cls.__name__:
+    if cls.__name__.endswith("SilePHtrans"):
         if name in [
+            "current",
+            "atom_current",
+            "bond_current",
+            "vector_current",
+            "orbital_current",
             "chemical_potential",
             "electron_temperature",
             "kT",
-            "current",
-            "current_parameter",
             "shot_noise",
             "noise_power",
         ]:
@@ -559,6 +909,107 @@ def sisl_skip(app, what, name, obj, skip, options):
     return skip
 
 
+from docutils.parsers.rst import directives
+
+#######
+# @pfebrer's suggestion for overriding the shown prefix for the templates.
+from sphinx.ext.autosummary import Autosummary
+
+
+class RemovePrefixAutosummary(Autosummary):
+    """Wrapper around the autosummary directive to allow for custom display names.
+
+    Adds a new option `:removeprefix:` which removes a prefix from the display names.
+    """
+
+    option_spec = {**Autosummary.option_spec, "removeprefix": directives.unchanged}
+
+    def get_items(self, *args, **kwargs):
+        items = super().get_items(*args, **kwargs)
+
+        remove_prefix = self.options.get("removeprefix")
+        if remove_prefix is not None:
+            items = [(item[0].removeprefix(remove_prefix), *item[1:]) for item in items]
+
+        return items
+
+
+def _setup_autodoc(app):
+    """Patch and fix autodoc so we get the correct formatting of the environment"""
+    from sphinx.ext import autodoc, autosummary
+    from sphinx.locale import _
+    from sphinx.util import typing
+
+    # These subsequent class and methods originate from mpi4py
+    # which is released under BSD-3 clause.
+    # All credits must go to mpi4py developers for their contribution!
+    def istypealias(obj, name):
+        if isinstance(obj, type):
+            return name != getattr(obj, "__name__", None)
+        return obj in (typing.Any,)
+
+    def istypevar(obj):
+        return isinstance(obj, typing.TypeVar)
+
+    class TypeDocumenter(autodoc.DataDocumenter):
+        objtype = "type"
+        directivetype = "data"
+        priority = autodoc.ClassDocumenter.priority + 1
+
+        @classmethod
+        def can_document_member(cls, member, membername, _isattr, parent):
+            return (
+                isinstance(parent, autodoc.ModuleDocumenter)
+                and parent.name == "sisl.typing"
+                and (istypevar(member) or istypealias(member, membername))
+            )
+
+        def add_directive_header(self, sig):
+            if istypevar(self.object):
+                obj = self.object
+                if not self.options.annotation:
+                    self.options.annotation = f' = TypeVar("{obj.__name__}")'
+            super().add_directive_header(sig)
+
+        def update_content(self, more_content):
+            obj = self.object
+            if istypevar(obj):
+                if obj.__covariant__:
+                    kind = _("Covariant")
+                elif obj.__contravariant__:
+                    kind = _("Contravariant")
+                else:
+                    kind = _("Invariant")
+                content = f"{kind} :class:`~typing.TypeVar`."
+                more_content.append(content, "")
+                more_content.append("", "")
+            if istypealias(obj, self.name):
+                content = _("alias of %s") % typing.restify(obj)
+                more_content.append(content, "")
+                more_content.append("", "")
+            super().update_content(more_content)
+
+        def get_doc(self, *args, **kwargs):
+            obj = self.object
+            if istypevar(obj):
+                if obj.__doc__ == typing.TypeVar.__doc__:
+                    return []
+            return super().get_doc(*args, **kwargs)
+
+    # Ensure the data-type gets parsed as a role.
+    # This will make the Type definitions print like a class
+    # which gives more space than the simpler table with very
+    # limited entry-space.
+    from sphinx.domains.python import PythonDomain
+
+    PythonDomain.object_types["data"].roles += ("class",)
+
+    app.add_autodocumenter(TypeDocumenter)
+
+
 def setup(app):
     # Setup autodoc skipping
+    _setup_autodoc(app)
+
     app.connect("autodoc-skip-member", sisl_skip)
+    app.add_directive("autosummary", RemovePrefixAutosummary, override=True)

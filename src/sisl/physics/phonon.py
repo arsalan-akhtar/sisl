@@ -37,13 +37,13 @@ from numpy import delete, fabs
 
 import sisl._array as _a
 from sisl import constant, units
-from sisl._help import dtype_complex_to_real
 from sisl._internal import set_module
+from sisl.typing import DistributionType
 
 from .distribution import get_distribution
 from .electron import DOS as electron_DOS
 from .electron import PDOS as electron_PDOS
-from .state import Coefficient, State, StateC, degenerate_decouple
+from .state import Coefficient, State, StateC
 
 __all__ = ["DOS", "PDOS"]
 __all__ += ["CoefficientPhonon", "ModePhonon", "ModeCPhonon"]
@@ -51,7 +51,7 @@ __all__ += ["EigenvaluePhonon", "EigenvectorPhonon", "EigenmodePhonon"]
 
 
 @set_module("sisl.physics.phonon")
-def DOS(E, hw, distribution="gaussian"):
+def DOS(E, hw, distribution: DistributionType = "gaussian"):
     r"""Calculate the density of modes (DOS) for a set of energies, `E`, with a distribution function
 
     The :math:`\mathrm{DOS}(E)` is calculated as:
@@ -69,13 +69,13 @@ def DOS(E, hw, distribution="gaussian"):
        energies to calculate the DOS at
     hw : array_like
        phonon eigenvalues
-    distribution : func or str, optional
+    distribution :
        a function that accepts :math:`E` as argument and calculates the
        distribution function.
 
     See Also
     --------
-    sisl.physics.distribution : a selected set of implemented distribution functions
+    :ref:`physics.distribution` : a selected set of implemented distribution functions
     PDOS : projected DOS (same as this, but projected onto each direction)
 
     Returns
@@ -87,7 +87,7 @@ def DOS(E, hw, distribution="gaussian"):
 
 
 @set_module("sisl.physics.phonon")
-def PDOS(E, mode, hw, distribution="gaussian"):
+def PDOS(E, mode, hw, distribution: DistributionType = "gaussian"):
     r"""Calculate the projected density of modes (PDOS) onto each each atom and direction for a set of energies, `E`, with a distribution function
 
     The :math:`\mathrm{PDOS}(E)` is calculated as:
@@ -110,13 +110,13 @@ def PDOS(E, mode, hw, distribution="gaussian"):
        eigenvectors
     hw : array_like
        eigenvalues
-    distribution : func or str, optional
+    distribution :
        a function that accepts :math:`E-\epsilon` as argument and calculates the
        distribution function.
 
     See Also
     --------
-    sisl.physics.distribution : a selected set of implemented distribution functions
+    :ref:`physics.distribution` : a selected set of implemented distribution functions
     DOS : total DOS (same as summing over atoms and directions)
 
     Returns
@@ -209,12 +209,12 @@ class EigenvaluePhonon(CoefficientPhonon):
         r"""Eigenmode values in units of :math:`\hbar \omega` [eV]"""
         return self.c
 
-    def occupation(self, distribution="bose_einstein"):
+    def occupation(self, distribution: DistributionType = "bose_einstein"):
         """Calculate the occupations for the states according to a distribution function
 
         Parameters
         ----------
-        distribution : str or func, optional
+        distribution :
            distribution used to find occupations
 
         Returns
@@ -226,10 +226,10 @@ class EigenvaluePhonon(CoefficientPhonon):
             distribution = get_distribution(distribution)
         return distribution(self.hw)
 
-    def DOS(self, E, distribution="gaussian"):
+    def DOS(self, E, distribution: DistributionType = "gaussian"):
         r"""Calculate DOS for provided energies, `E`.
 
-        This routine calls `sisl.physics.phonon.DOS` with appropriate arguments
+        This routine calls `~sisl.physics.phonon.DOS` with appropriate arguments
         and returns the DOS.
 
         See `~sisl.physics.phonon.DOS` for argument details.
@@ -258,12 +258,12 @@ class EigenmodePhonon(ModeCPhonon):
         r"""Eigenmode values in units of :math:`\hbar \omega` [eV]"""
         return self.c
 
-    def occupation(self, distribution="bose_einstein"):
+    def occupation(self, distribution: DistributionType = "bose_einstein"):
         """Calculate the occupations for the states according to a distribution function
 
         Parameters
         ----------
-        distribution : str or func, optional
+        distribution :
            distribution used to find occupations
 
         Returns
@@ -275,17 +275,17 @@ class EigenmodePhonon(ModeCPhonon):
             distribution = get_distribution(distribution)
         return distribution(self.hw)
 
-    def DOS(self, E, distribution="gaussian"):
+    def DOS(self, E, distribution: DistributionType = "gaussian"):
         r"""Calculate DOS for provided energies, `E`.
 
-        This routine calls `sisl.physics.phonon.DOS` with appropriate arguments
+        This routine calls `~sisl.physics.phonon.DOS` with appropriate arguments
         and returns the DOS.
 
         See `~sisl.physics.phonon.DOS` for argument details.
         """
         return DOS(E, self.hw, distribution)
 
-    def PDOS(self, E, distribution="gaussian"):
+    def PDOS(self, E, distribution: DistributionType = "gaussian"):
         r"""Calculate PDOS for provided energies, `E`.
 
         This routine calls `~sisl.physics.phonon.PDOS` with appropriate arguments

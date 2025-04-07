@@ -17,6 +17,7 @@ def geometry():
 
     orb = sisl.AtomicOrbital("2pzZ", (r, f))
     geom = sisl.geom.graphene(orthogonal=True, atoms=sisl.Atom(6, orb))
+    geom.set_nsc([3, 5, 1])
 
     return geom
 

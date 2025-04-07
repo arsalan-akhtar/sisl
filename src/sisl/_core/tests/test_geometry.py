@@ -4,12 +4,11 @@
 from __future__ import annotations
 
 import itertools
-import math as m
-import os.path as osp
 
 import numpy as np
 import pytest
 
+import sisl as si
 import sisl.geom as sisl_geom
 from sisl import (
     Atom,
@@ -21,8 +20,6 @@ from sisl import (
     SislWarning,
     Sphere,
 )
-
-_dir = osp.join("sisl")
 
 pytestmark = [pytest.mark.geom, pytest.mark.geometry]
 
@@ -986,6 +983,22 @@ class TestGeometry:
         lattice_3x3 = g.lattice.tile(3, 0).tile(3, 1)
         assert len(g.within_inf(lattice_3x3)[0]) == 25
 
+    def test_within_inf_gh649(self):
+        # see https://github.com/zerothi/sisl/issues/649
+
+        # Create a geometry with an atom outside of the unit cell
+        geometry = Geometry([-0.5, 0, 0], lattice=np.diag([2, 10, 10]))
+
+        search = Lattice(np.diag([3, 10, 10]))
+        ia, xyz, isc = geometry.within_inf(search, periodic=True)
+        assert np.allclose(ia, 0)
+        assert np.allclose(isc, [1, 0, 0])
+
+        search = Lattice(np.diag([2, 10, 10]))
+        ia, xyz, isc = geometry.within_inf(search, periodic=True)
+        assert np.allclose(ia, 0)
+        assert np.allclose(isc, [1, 0, 0])
+
     def test_close_sizes(self, setup):
         point = 0
 
@@ -1549,12 +1562,32 @@ class TestGeometry:
 
     # Test ASE (but only fail if present)
 
+    def test_geometry_dispatch(self):
+        pytest.importorskip("ase", reason="ase not available")
+        gr = sisl_geom.graphene()
+        to_ase = gr.to.ase()
+
+        ase_rotate = si.rotate(to_ase, 30, [0, 0, 1])
+        assert isinstance(ase_rotate, type(to_ase))
+        ase_sisl_rotate = si.rotate(to_ase, 30, [0, 0, 1], ret_sisl=True)
+        assert isinstance(ase_sisl_rotate, Geometry)
+        geom_rotate = si.rotate(gr, 30, [0, 0, 1])
+
+        assert geom_rotate.equal(ase_sisl_rotate, R=False)
+
     def test_geometry_ase_new_to(self):
         pytest.importorskip("ase", reason="ase not available")
         gr = sisl_geom.graphene()
         to_ase = gr.to.ase()
         from_ase = gr.new(to_ase)
         assert gr.equal(from_ase, R=False)
+
+    def test_geometry_ase_run_center(self):
+        pytest.importorskip("ase", reason="ase not available")
+        gr = sisl_geom.graphene()
+        ase_atoms = gr.to.ase()
+        from_ase = si.center(ase_atoms)
+        assert np.allclose(gr.center(), from_ase)
 
     @pytest.mark.xfail(
         reason="pymatgen backconversion sets nsc=[3, 3, 3], we need to figure this out"
@@ -1596,18 +1629,18 @@ def test_geometry_sort_simple():
     atol = 1e-9
 
     for i in [0, 1, 2]:
-        s = bi.sort(axis=i)
+        s = bi.sort(axes=i)
         assert np.all(np.diff(s.xyz[:, i]) >= -atol)
         s = bi.sort(lattice=i)
         assert np.all(np.diff(s.fxyz[:, i] * bi.lattice.length[i]) >= -atol)
 
-    s, idx = bi.sort(axis=0, lattice=1, ret_atoms=True)
+    s, idx = bi.sort(axes=0, lattice=1, ret_atoms=True)
     assert np.all(np.diff(s.xyz[:, 0]) >= -atol)
     for ix in idx:
         assert np.all(np.diff(bi.fxyz[ix, 1]) >= -atol)
 
     s, idx = bi.sort(
-        axis=0, ascending=False, lattice=1, vector=[0, 0, 1], ret_atoms=True
+        axes=0, ascending=False, lattice=1, vector=[0, 0, 1], ret_atoms=True
     )
     assert np.all(np.diff(s.xyz[:, 0]) >= -atol)
     for ix in idx:
@@ -1623,23 +1656,28 @@ def test_geometry_sort_int():
     atol = 1e-9
 
     for i in [0, 1, 2]:
-        s = bi.sort(axis0=i)
+        s = bi.sort(axes0=i)
         assert np.all(np.diff(s.xyz[:, i]) >= -atol)
         s = bi.sort(lattice3=i)
         assert np.all(np.diff(s.fxyz[:, i] * bi.lattice.length[i]) >= -atol)
 
-    s, idx = bi.sort(axis12314=0, lattice0=1, ret_atoms=True)
+    s, idx = bi.sort(axes12314=0, lattice0=1, ret_atoms=True)
     assert np.all(np.diff(s.xyz[:, 0]) >= -atol)
     for ix in idx:
         assert np.all(np.diff(bi.fxyz[ix, 1]) >= -atol)
 
     s, idx = bi.sort(
-        ascending1=True, axis15=0, ascending0=False, lattice235=1, ret_atoms=True
+        ascending1=True, axes15=0, ascending0=False, lattice235=1, ret_atoms=True
     )
     assert np.all(np.diff(s.xyz[:, 0]) >= -atol)
     for ix in idx:
         # idx is according to bi
         assert np.all(np.diff(bi.fxyz[ix, 1] * bi.lattice.length[i]) <= atol)
+
+
+def test_geometry_ellipsis():
+    gr = sisl_geom.graphene()
+    assert np.allclose(gr.axyz(...), gr.axyz(None))
 
 
 def test_geometry_sort_atom():
@@ -1832,7 +1870,7 @@ def test_geometry_sub_orbitals():
 
 def test_geometry_new_xyz(sisl_tmp):
     # test that Geometry.new works
-    out = sisl_tmp("out.xyz", _dir)
+    out = sisl_tmp("out.xyz")
     C = Atom[6]
     gr = sisl_geom.graphene(atoms=C)
     # writing doesn't save orbital information, so we force

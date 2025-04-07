@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 from functools import cached_property
+from numbers import Integral
 from typing import Optional
 
 import numpy as np
 
 from sisl import Geometry
+from sisl._internal import set_module
 
 __all__ = [
     "UniqueNeighborList",
@@ -20,6 +22,7 @@ __all__ = [
 ]
 
 
+@set_module("sisl.geom")
 class Neighbors:
 
     def __init__(
@@ -33,18 +36,28 @@ class Neighbors:
         self._split_indices = split_indices
 
     @property
-    def i(self) -> np.ndarray:
-        """For each neighbor pair (i, j), the first index."""
+    def I(self) -> np.ndarray:
+        """For each neighbor pair (I, J), the first index."""
         return self._finder_results[:, 0]
 
     @property
-    def j(self) -> np.ndarray:
-        """For each neighbor pair (i, j), the second index."""
+    def i(self) -> np.ndarray:
+        """Same as `I`, provided for backwards compatibility, may be deprecated later"""
+        return self.I
+
+    @property
+    def J(self) -> np.ndarray:
+        """For each neighbor pair (I, J), the second index."""
         return self._finder_results[:, 1]
 
     @property
+    def j(self) -> np.ndarray:
+        """Same as `J`, provided for backwards compatibility, may be deprecated later"""
+        return self.J
+
+    @property
     def isc(self) -> np.ndarray:
-        """For each neighbor pair (i, j), the supercell indices of `j`."""
+        r"""For each neighbor pair (I, J), the supercell indices of :math:`J`."""
         return self._finder_results[:, 2:]
 
     @cached_property
@@ -71,6 +84,7 @@ class Neighbors:
         return len(self.split_indices)
 
 
+@set_module("sisl.geom")
 class AtomsNeighborList(Neighbors):
     """Base class for interactions between atoms."""
 
@@ -80,7 +94,7 @@ class AtomsNeighborList(Neighbors):
 
         if self._split_indices is None:
             n_neighbors = np.zeros(self.geometry.na, dtype=int)
-            index, counts = np.unique(self.i, return_counts=True)
+            index, counts = np.unique(self.I, return_counts=True)
 
             n_neighbors[index] = counts
             return n_neighbors
@@ -88,10 +102,11 @@ class AtomsNeighborList(Neighbors):
             return np.diff(self._split_indices, prepend=0)
 
 
+@set_module("sisl.geom")
 class UniqueNeighborList(AtomsNeighborList):
     """Full neighbors list of a system, but **containing only the upper triangle of the adjacency matrix**.
 
-    What this means, is that the the object only contains one direction of each interaction.
+    What this means, is that the object only contains one direction of each interaction.
 
     This is only possible if the interaction is symmetric (there is no directionality and
     thresholds for interaction do not depend on direction).
@@ -100,7 +115,7 @@ class UniqueNeighborList(AtomsNeighborList):
     --------
 
     You can get a unique neighbors list from the `find_unique_pairs` method of a `NeighborFinder` object.
-    Then, you can retreive the neighbors from it:
+    Then, you can retrieve the neighbors from it:
 
     .. code-block:: python
 
@@ -116,10 +131,10 @@ class UniqueNeighborList(AtomsNeighborList):
         # Get the list of unique neighbor pairs
         neighbors = finder.find_unique_pairs()
 
-        # You can get the neighbor pairs (i,j) from the i and j attributes
+        # You can get the neighbor pairs (I,J) from the I and J attributes
         # The supercell index of atom J is in the isc attribute.
-        print("ATOM I", neighbors.i)
-        print("ATOM J (NEIGHBOR)", neighbors.j)
+        print("ATOM I", neighbors.I)
+        print("ATOM J (NEIGHBOR)", neighbors.J)
         print("NEIGHBORS ISC:", neighbors.isc)
 
         # Notice that I is always smaller than J. Each connection is only
@@ -136,7 +151,7 @@ class UniqueNeighborList(AtomsNeighborList):
 
         if self._split_indices is None:
             n_neighbors = np.zeros(self.geometry.na, dtype=int)
-            index, counts = np.unique([self.i, self.j], return_counts=True)
+            index, counts = np.unique([self.I, self.J], return_counts=True)
 
             n_neighbors[index] = counts
             return n_neighbors
@@ -147,16 +162,16 @@ class UniqueNeighborList(AtomsNeighborList):
         """Converts the unique neighbors list to a full neighbors list."""
         upper_tri = self._finder_results
         lower_tri = np.column_stack(
-            [self.j, self.i, -self.isc[:, 0], -self.isc[:, 1], -self.isc[:, 2]]
+            [self.J, self.I, -self.isc[:, 0], -self.isc[:, 1], -self.isc[:, 2]]
         )
 
-        self_interactions = (self.i == self.j) & np.all(self.isc == 0, axis=1)
+        self_interactions = (self.I == self.J) & np.all(self.isc == 0, axis=1)
         lower_tri = lower_tri[~self_interactions]
 
         # Concatenate the lower triangular with the upper triangular part
         all_finder_results = np.concatenate([upper_tri, lower_tri], axis=0)
 
-        # Sort by i and then by j
+        # Sort by I and then by J
         sorted_indices = np.lexsort(all_finder_results[:, [1, 0]].T)
         all_finder_results = all_finder_results[sorted_indices]
 
@@ -166,12 +181,13 @@ class UniqueNeighborList(AtomsNeighborList):
         )
 
 
+@set_module("sisl.geom")
 class FullNeighborList(AtomsNeighborList):
-    """Full neighbors list of a system.
+    r"""Full neighbors list of a system.
 
     This class, contrary to `UniqueNeighborList`, (possibly) contains the two directions
     of an interaction between two given atoms. Notice that it is possible that there is
-    a connection from atom `i` to atom `j` but not the other way around.
+    a connection from atom :math:`I` to atom :math:`J` but not the other way around.
 
     Examples
     --------
@@ -197,11 +213,11 @@ class FullNeighborList(AtomsNeighborList):
         for at_neighs in neighbors:
             print()
             print(f"NEIGHBORS OF ATOM {at_neighs.atom} ({at_neighs.n_neighbors} neighbors): ")
-            print("J", at_neighs.j)
+            print("J", at_neighs.J)
             print("ISC", at_neighs.isc)
 
         # Or get the neighbors of a particular atom:
-        neighbors[0].j
+        neighbors[0].J
 
     See Also
     --------
@@ -212,7 +228,7 @@ class FullNeighborList(AtomsNeighborList):
 
     def __getitem__(self, item) -> AtomNeighborList:
         """Returns the interactions of a given atom."""
-        if isinstance(item, int):
+        if isinstance(item, Integral):
 
             start = 0 if item == 0 else self.split_indices[item - 1]
             end = self.split_indices[item]
@@ -229,7 +245,7 @@ class FullNeighborList(AtomsNeighborList):
         """Converts the full neighbors list to a unique neighbors list."""
 
         full_finder_results = self._finder_results
-        unique_finder_results = full_finder_results[self.i <= self.j]
+        unique_finder_results = full_finder_results[self.I <= self.J]
 
         # Concatenate the uc connections with the rest of the connections.
         return UniqueNeighborList(
@@ -237,6 +253,7 @@ class FullNeighborList(AtomsNeighborList):
         )
 
 
+@set_module("sisl.geom")
 class PartialNeighborList(AtomsNeighborList):
     """Neighbors list containing only the neighbors of some atoms.
 
@@ -266,12 +283,12 @@ class PartialNeighborList(AtomsNeighborList):
         for at_neighs in neighbors:
             print()
             print(f"NEIGHBORS OF ATOM {at_neighs.atom} ({at_neighs.n_neighbors} neighbors): ")
-            print("J", at_neighs.j)
+            print("J", at_neighs.J)
             print("ISC", at_neighs.isc)
 
         # Or get the neighbors of a particular atom
         neighbors[0].atom # This will be 2
-        neighbors[0].j
+        neighbors[0].J
 
     See Also
     --------
@@ -293,13 +310,13 @@ class PartialNeighborList(AtomsNeighborList):
         """Number of neighbors that each atom has."""
 
         if self._split_indices is None:
-            return np.array([np.sum(self.i == at) for at in self.atoms])
+            return np.array([np.sum(self.I == at) for at in self.atoms])
         else:
             return np.diff(self._split_indices, prepend=0)
 
     def __getitem__(self, item) -> AtomNeighborList:
         """Returns the interactions of a given atom."""
-        if isinstance(item, int):
+        if isinstance(item, Integral):
 
             start = 0 if item == 0 else self.split_indices[item - 1]
             end = self.split_indices[item]
@@ -313,6 +330,7 @@ class PartialNeighborList(AtomsNeighborList):
             raise ValueError("Only integer indexing is supported.")
 
 
+@set_module("sisl.geom")
 class AtomNeighborList(Neighbors):
     """List of atoms that are close to a given atom.
 
@@ -339,6 +357,7 @@ class AtomNeighborList(Neighbors):
         return len(self._finder_results)
 
 
+@set_module("sisl.geom")
 class PointsNeighborList(Neighbors):
     """List of atoms that are close to a set of points in space.
 
@@ -367,11 +386,11 @@ class PointsNeighborList(Neighbors):
         for point_neighs in neighbors:
             print()
             print(f"NEIGHBORS OF POINT {point_neighs.point} ({point_neighs.n_neighbors} neighbors): ")
-            print("J", point_neighs.j)
+            print("J", point_neighs.J)
             print("ISC", point_neighs.isc)
 
         # Or get the neighbors of a particular point:
-        neighbors[0].j
+        neighbors[0].J
 
     See Also
     --------
@@ -392,7 +411,7 @@ class PointsNeighborList(Neighbors):
 
         if self._split_indices is None:
             n_neighbors = np.zeros(len(self.points), dtype=int)
-            index, counts = np.unique(self.i, return_counts=True)
+            index, counts = np.unique(self.I, return_counts=True)
             n_neighbors[index] = counts
             return n_neighbors
         else:
@@ -400,7 +419,7 @@ class PointsNeighborList(Neighbors):
 
     def __getitem__(self, item):
         """Returns the interactions of a given point."""
-        if isinstance(item, int):
+        if isinstance(item, Integral):
 
             start = 0 if item == 0 else self.split_indices[item - 1]
             end = self.split_indices[item]
@@ -414,6 +433,7 @@ class PointsNeighborList(Neighbors):
             raise ValueError("Only integer indexing is supported.")
 
 
+@set_module("sisl.geom")
 class PointNeighborList(Neighbors):
     """List of atoms that are close to a point in space.
 

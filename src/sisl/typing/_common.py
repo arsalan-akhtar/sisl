@@ -3,33 +3,36 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Union
 
-import numpy as np
 import scipy.sparse as sps
-
-from . import _numpy as npt
 
 # To prevent import cycles place any internal imports in the branch below
 # and use a string literal forward reference to it in subsequent types
 # https://mypy.readthedocs.io/en/latest/common_issues.html#import-cycles
 if TYPE_CHECKING:
-    from sisl import BaseSile, Geometry, Grid, Lattice, Shape
-    from sisl._category import GenericCategory
-    from sisl.geom.category import AtomCategory
+    from sisl import Geometry, Lattice, SparseAtom, SparseCSR, SparseOrbital
 
 __all__ = [
     "Coord",
     "CoordOrScalar",
     "FuncType",
+    "OrSequence",
     "KPoint",
-    "LatticeOrGeometry",
     "SeqFloat",
     "SeqOrScalarFloat",
     "SparseMatrix",
     "SparseMatrixExt",
+    "SparseMatrixGeometry",
 ]
+
+
+class OrSequence:
+    __slots__ = ()
+
+    def __getitem__(self, parameter):
+        return Union[Sequence[parameter], parameter]
 
 
 SeqFloat = Sequence[float]
@@ -43,11 +46,6 @@ KPoint = Sequence[float]
 # Short for *any* function
 FuncType = Callable[..., Any]
 
-LatticeOrGeometry = Union[
-    "Lattice",
-    "Geometry",
-]
-
 if hasattr(sps, "sparray"):
     SparseMatrixExt = Union[
         sps.spmatrix,
@@ -60,3 +58,5 @@ SparseMatrix = Union[
     SparseMatrixExt,
     "SparseCSR",
 ]
+
+SparseMatrixGeometry = Union["SparseAtom", "SparseOrbital"]

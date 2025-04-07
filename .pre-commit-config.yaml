@@ -8,23 +8,25 @@
 # If pre-commit does some modification, the commit will fail. Add the
 # changes done by pre-commit and commit again.
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-    -   id: check-yaml
-    -   id: end-of-file-fixer
-    -   id: trailing-whitespace
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+    - id: end-of-file-fixer
+    - id: trailing-whitespace
+    - id: check-yaml
+    - id: check-toml
 # Black to format code with a consistent style
 - repo: https://github.com/psf/black-pre-commit-mirror
-  rev: 24.2.0
+  rev: 25.1.0
   hooks:
     - id: black-jupyter
 # isort to automatically sort imports
 - repo: https://github.com/pycqa/isort
-  rev: 5.12.0
+  rev: 6.0.0
   hooks:
     - id: isort
       name: isort (python)
+      additional_dependencies: [toml]
 # jupyter notebook cleans
 - repo: local
   hooks:
@@ -44,3 +46,18 @@ repos:
         - --license-filepath
         - .LICENSE_header
         - --no-extra-eol
+#Validate our CITATION.cff
+- repo: https://github.com/citation-file-format/cff-converter-python
+  rev: ebf0b5e44d67f8beaa1cd13a0d0393ea04c6058d
+  hooks:
+    - id: validate-cff
+#- repo: https://github.com/rstcheck/rstcheck
+#  rev: v6.2.4  # Use the sha / tag you want to point at
+#  hooks:
+#    - id: rstcheck
+#      additional_dependencies: [toml]  # can be omitted if empty
+#Validate the numpydoc string, we use numpydoc for parsing
+#- repo: https://github.com/numpy/numpydoc
+#  rev: v1.8.0
+#  hooks:
+#    - id: numpydoc-validation

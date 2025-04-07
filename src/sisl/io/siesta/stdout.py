@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import os
+from collections import namedtuple
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
 
@@ -16,6 +17,7 @@ from sisl._help import voigt_matrix
 from sisl._internal import set_module
 from sisl.messages import deprecation, warn
 from sisl.physics import Spin
+from sisl.physics.brillouinzone import MonkhorstPack
 from sisl.unit.siesta import unit_convert
 from sisl.utils import PropertyDict
 from sisl.utils.cmd import *
@@ -28,7 +30,6 @@ __all__ = ["stdoutSileSiesta", "outSileSiesta"]
 
 
 Bohr2Ang = unit_convert("Bohr", "Ang")
-_A = SileSiesta.InfoAttr
 
 
 def _ensure_atoms(atoms):
@@ -40,10 +41,12 @@ def _ensure_atoms(atoms):
     return atoms
 
 
-def _parse_spin(attr, match):
+def _parse_spin(attr, instance, match):
     """Parse 'redata: Spin configuration *= <value>'"""
-    opt = match.string.split("=")[-1]
+    opt = match.string.split("=")[-1].strip()
 
+    if opt.startswith("nambu"):
+        return Spin("nambu")
     if opt.startswith("spin-orbit"):
         return Spin("spin-orbit")
     if opt.startswith("collinear") or opt.startswith("colinear"):
@@ -103,6 +106,35 @@ def _read_scf_md_process(scfs):
     return df
 
 
+def _parse_in_dynamics(attr, instance, match):
+    """Determines whether we are in the dynamics section or in the *Final* section.
+
+    Basically it returns ``not instance.info._in_final_analysis``.
+    """
+    return not instance.info._in_final_analysis()
+
+
+def _parse_version(attr, instance, match):
+    opt = match.string.split(":", maxsplit=1)[-1].strip()
+
+    version, *spec = opt.split("-", maxsplit=1)
+    try:
+        version = tuple(int(v) for v in version.split("."))
+    except Exception:
+        version = (0, 0, 0)
+
+    # Convert version to a tuple
+    Version = namedtuple("Version", "version spec")
+
+    version = Version(version, spec)
+
+    return version
+
+
+def _in_final(self):
+    return self.fh.tell() >= self.info._in_final_analysis_tell
+
+
 @set_module("sisl.io.siesta")
 class stdoutSileSiesta(SileSiesta):
     """Output file from Siesta
@@ -111,35 +143,63 @@ class stdoutSileSiesta(SileSiesta):
     """
 
     _info_attributes_ = [
-        _A(
-            "na",
-            r"^initatomlists: Number of atoms",
-            lambda attr, match: int(match.string.split()[-3]),
+        dict(
+            name="version",
+            searcher=r"^Version[ ]*: ",
+            parser=_parse_version,
             not_found="warn",
         ),
-        _A(
-            "no",
-            r"^initatomlists: Number of atoms",
-            lambda attr, match: int(match.string.split()[-2]),
+        dict(
+            name="na",
+            searcher=r"^initatomlists: Number of atoms",
+            parser=lambda attr, instance, match: int(match.string.split()[-3]),
             not_found="warn",
         ),
-        _A(
-            "completed",
-            r".*Job completed",
-            lambda attr, match: lambda: True,
+        dict(
+            name="no",
+            searcher=r"^initatomlists: Number of atoms",
+            parser=lambda attr, instance, match: int(match.string.split()[-2]),
+            not_found="warn",
+        ),
+        dict(
+            name="nspecies",
+            searcher=r"^redata: Number of Atomic Species",
+            parser=lambda attr, instance, match: int(match.string.split("=")[-1]),
+            not_found="warn",
+        ),
+        dict(
+            name="completed",
+            searcher=r".*Job completed",
+            parser=lambda attr, instance, match: lambda: True,
             default=lambda: False,
             not_found="warn",
         ),
-        _A(
-            "spin",
-            r"^redata: Spin configuration",
-            _parse_spin,
+        dict(
+            name="spin",
+            searcher=r"^redata: Spin configuration",
+            parser=_parse_spin,
         ),
-        _A(
-            "_final_analysis",
-            r"^siesta: Final energy",
-            lambda attr, match: lambda: True,
-            default=lambda: False,
+        dict(
+            name="_has_forces_in_dynamics",
+            searcher=r"^siesta: Atomic forces",
+            parser=_parse_in_dynamics,
+        ),
+        dict(
+            name="_has_stress_in_dynamics",
+            searcher=r"^siesta: Stress tensor",
+            parser=_parse_in_dynamics,
+        ),
+        dict(
+            name="_in_final_analysis_tell",
+            searcher=r"^siesta: Final energy",
+            parser=lambda attr, instance, match: instance.fh.tell(),
+            default=1e12,
+        ),
+        dict(
+            name="_in_final_analysis",
+            searcher=None,
+            default=_in_final,
+            found=True,
         ),
     ]
 
@@ -320,7 +380,7 @@ class stdoutSileSiesta(SileSiesta):
         ----------
         skip_input :
             the input geometry may be contained as a print-out.
-            This is not part of an MD calculation, and hence is per
+            This is not part of an MD calculation, and hence is by
             default not returned.
 
         Returns
@@ -335,9 +395,7 @@ class stdoutSileSiesta(SileSiesta):
             """Wrapper to return None"""
             return None
 
-        line = " "
-        while line != "":
-            line = self.readline()
+        while line := self.readline():
             if "outcoor" in line and "coordinates" in line:
                 func = self._r_geometry_outcoor
                 break
@@ -349,14 +407,20 @@ class stdoutSileSiesta(SileSiesta):
 
     @SileBinder(postprocess=postprocess_tuple(_a.arrayd))
     @sile_fh_open()
-    def read_force(self, total: bool = False, max: bool = False, key: str = "siesta"):
+    def read_force(
+        self,
+        total: bool = False,
+        max: bool = False,
+        key: Literal["siesta", "ts"] = "siesta",
+        skip_final: Optional[bool] = None,
+    ):
         """Reads the forces from the Siesta output file
 
         Parameters
         ----------
-        total: bool, optional
+        total:
             return the total forces instead of the atomic forces.
-        max: bool, optional
+        max:
             whether only the maximum atomic force should be returned for each step.
 
             Setting it to `True` is equivalent to `max(outSile.read_force())` in case atomic forces
@@ -364,10 +428,17 @@ class stdoutSileSiesta(SileSiesta):
 
             Note that this is not the same as doing `max(outSile.read_force(total=True))` since
             the forces returned in that case are averages on each axis.
-        key: {"siesta", "ts"}
+        key:
             Specifies the indicator string for the forces that are to be read.
             The function will look for a line containing ``f'{key}: Atomic forces'``
             to start reading forces.
+        skip_final:
+            the final output of the forces is duplicated when the *final*
+            output is written.
+            By default, this method will return the final forces, but
+            only **if** no other forces are found.
+            If forces from dynamics are found, then the final forces
+            will not be returned, unless explicitly requested through this flag.
 
         Returns
         -------
@@ -387,35 +458,38 @@ class stdoutSileSiesta(SileSiesta):
         if not found:
             return None
 
+        if skip_final is None:
+            # If we have final forces, default to skip the
+            # final forces when we have forces in the dynamics
+            # sections.
+            skip_final = self.info._has_forces_in_dynamics
+
         # Now read data
-        line = self.readline()
-        if "siesta:" in line:
+        if skip_final and self.info._in_final_analysis():
             # This is the final summary, we don't need to read it as it does not contain new information
             # and also it make break things since max forces are not written there
             return None
 
         F = []
         # First, we encounter the atomic forces
-        while "---" not in line:
+        while line := self.readline():
+            if "---" in line:
+                break
             line = line.split()
             if not (total or max):
                 F.append([float(x) for x in line[-3:]])
-            line = self.readline()
-            if line == "":
-                break
 
         if not F:
             F = None
 
-        line = self.readline().split()
         # Parse total forces if requested
-        if total and line:
+        line = self.readline()
+        if total and (line := line.split()):
             F = _a.arrayd([float(x) for x in line[-3:]])
 
         # And after that we can read the max force
         line = self.readline()
-        if max and line:
-            line = self.readline().split()
+        if max and (line := self.readline().split()):
             maxF = _a.arrayd(float(line[1]))
 
             # In case total is also requested, we are going to
@@ -431,17 +505,24 @@ class stdoutSileSiesta(SileSiesta):
 
     @SileBinder(postprocess=_a.arrayd)
     @sile_fh_open()
-    def read_stress(self, key: str = "static", skip_final: bool = True) -> np.ndarray:
+    def read_stress(
+        self,
+        key: Literal["static", "total", "Voigt"] = "static",
+        skip_final: Optional[bool] = None,
+    ) -> np.ndarray:
         """Reads the stresses from the Siesta output file
 
         Parameters
         ----------
-        key : {static, total, Voigt}
+        key :
            which stress to read from the output.
         skip_final:
-            the static stress tensor is duplicated in the output when running
-            MD simulations. This flag is used in case one wish to get the final
-            one.
+            the final output of the stress is duplicated when the *final*
+            output is written.
+            By default, this method will return the final stress, but
+            only **if** no other stresses are found.
+            If stresses from dynamics are found, then the final stress
+            will not be returned, unless explicitly requested through this flag.
 
         Returns
         -------
@@ -463,6 +544,17 @@ class stdoutSileSiesta(SileSiesta):
             found, line = self.step_to(search, allow_reread=False)
             found = found and key in line
 
+        if skip_final is None:
+            # If we have final stress, default to skip the
+            # final stress when we have stress in the dynamics
+            # sections.
+            skip_final = self.info._has_stress_in_dynamics
+
+        if skip_final and self.info._in_final_analysis():
+            # we are in the final section, and don't want to do
+            # anything
+            return None
+
         if not found:
             return None
 
@@ -475,26 +567,25 @@ class stdoutSileSiesta(SileSiesta):
             for _ in range(3):
                 line = self.readline().split()
                 S.append([float(x) for x in line[-3:]])
-                if skip_final:
-                    if line[0].startswith("siesta:"):
-                        return None
             S = _a.arrayd(S)
 
         return S
 
     @SileBinder(postprocess=_a.arrayd)
     @sile_fh_open()
-    def read_moment(self, orbitals=False, quantity="S") -> np.ndarray:
+    def read_moment(
+        self, orbitals: bool = False, quantity: Literal["S", "L"] = "S"
+    ) -> np.ndarray:
         """Reads the moments from the Siesta output file
 
         These will only be present in case of spin-orbit coupling.
 
         Parameters
         ----------
-        orbitals: bool, optional
+        orbitals:
            return a table with orbitally resolved
            moments.
-        quantity: {'S', 'L'}, optional
+        quantity:
            return the spin-moments or the L moments
         """
         # Read until outcoor is found
@@ -679,7 +770,46 @@ class stdoutSileSiesta(SileSiesta):
 
         return out
 
-    def read_data(self, *args, **kwargs):
+    @SileBinder()
+    @sile_fh_open()
+    def read_brillouinzone(self, trs: bool = True) -> MonkhorstPack:
+        r"""Parses the k-grid section if present, otherwise returns the
+        :math:`\Gamma`-point"""
+
+        # store position, read geometry, then reposition file.
+        tell = self.fh.tell()
+        geom = self.read_geometry()
+        self.fh.seek(tell)
+
+        found, line = self.step_to(
+            "siesta: k-grid: Number of k-points", allow_reread=False
+        )
+
+        if not found:
+            return MonkhorstPack(geom, 1, trs=trs)
+
+        nk = int(line.split("=")[-1])
+
+        # default kcell and kdispl
+        kcell = np.diag([1, 1, 1])
+        kdispl = np.zeros(3)
+
+        # if next line also contains 'siesta: k-grid:' then we can step_to
+        line = self.readline()
+        if line.startswith("siesta: k-grid:"):
+            if self.step_to(
+                "siesta: k-grid: Supercell and displacements", allow_reread=False
+            )[0]:
+                for i in range(3):
+                    line = self.readline().split()
+                    kdispl[i] = float(line[-1])
+                    kcell[i, 2] = int(line[-2])
+                    kcell[i, 1] = int(line[-3])
+                    kcell[i, 0] = int(line[-4])
+
+        return MonkhorstPack(geom, kcell, displacement=kdispl, trs=trs)
+
+    def read_data(self, *args, **kwargs) -> Any:
         """Read specific content in the Siesta out file
 
         The currently implemented things are denoted in
@@ -740,7 +870,7 @@ class stdoutSileSiesta(SileSiesta):
     def read_scf(
         self,
         key: str = "scf",
-        iscf: Optional[int] = -1,
+        iscf: Optional[Union[int, Ellipsis]] = -1,
         as_dataframe: bool = False,
         ret_header: bool = False,
     ):
@@ -752,7 +882,7 @@ class stdoutSileSiesta(SileSiesta):
             parse SCF information from Siesta SCF or TranSiesta SCF
         iscf :
             which SCF cycle should be stored. If ``-1`` only the final SCF step is stored,
-            for None *all* SCF cycles are returned. When `iscf` values queried are not found they
+            for `...`/`None` *all* SCF cycles are returned. When `iscf` values queried are not found they
             will be truncated to the nearest SCF step.
         as_dataframe:
             whether the information should be returned as a `pandas.DataFrame`. The advantage of this
@@ -766,7 +896,9 @@ class stdoutSileSiesta(SileSiesta):
         # These are the properties that are written in SIESTA scf
         props = ["iscf", "Eharris", "E_KS", "FreeEng", "dDmax", "Ef", "dHmax"]
 
-        if not iscf is None:
+        if iscf is Ellipsis:
+            iscf = None
+        elif iscf is not None:
             if iscf == 0:
                 raise ValueError(
                     f"{self.__class__.__name__}.read_scf requires iscf argument to *not* be 0!"
@@ -994,13 +1126,16 @@ class stdoutSileSiesta(SileSiesta):
 
     @sile_fh_open(True)
     def read_charge(
-        self, name, iscf=Opt.ANY, imd=Opt.ANY, key_scf="scf", as_dataframe=False
+        self,
+        name: Literal["voronoi", "hirshfeld", "mulliken", "mulliken:<5.2"],
+        iscf: Union[Opt, int, Ellipsis] = Opt.ANY,
+        imd: Union[Opt, int, Ellipsis] = Opt.ANY,
+        key_scf: str = "scf",
+        as_dataframe: bool = False,
     ):
         r"""Read charges calculated in SCF loop or MD loop (or both)
 
         Siesta enables many different modes of writing out charges.
-
-        NOTE: currently Mulliken charges are not implemented.
 
         The below table shows a list of different cases that
         may be encountered, the letters are referred to in the
@@ -1015,7 +1150,11 @@ class stdoutSileSiesta(SileSiesta):
         +-----------+-----+-----+--------+-------+------------------+
         | Hirshfeld | +   | +   | +      | +     | -                |
         +-----------+-----+-----+--------+-------+------------------+
-        | Mulliken  | +   | +   | +      | +     | +                |
+        | Mulliken  | +   | +   | +      | +     | -                |
+        |   (>=5.2) |     |     |        |       |                  |
+        +-----------+-----+-----+--------+-------+------------------+
+        | Mulliken  | +   | +   | +      | +     | (+)              |
+        |     <5.2  |     |     |        |       |                  |
         +-----------+-----+-----+--------+-------+------------------+
 
         Notes
@@ -1025,28 +1164,28 @@ class stdoutSileSiesta(SileSiesta):
         the SCF charges are not present. For `Opt.ANY` it will return
         the most information, effectively SCF will be returned if present.
 
-        Currently Mulliken is not implemented, any help in reading this would be
-        very welcome.
+        Currently orbitally-resolved Mulliken is not implemented, any help in
+        reading this would be very welcome.
 
         Parameters
         ----------
-        name: {"voronoi", "hirshfeld"}
+        name:
             the name of the charges that you want to read
-        iscf: int or Opt, optional
+        iscf: int or Opt or `...`, optional
             index (0-based) of the scf iteration you want the charges for.
-            If the enum specifier `Opt.ANY` or `Opt.ALL` are used, then
+            If the enum specifier `Opt.ANY` or `Opt.ALL`/`...` are used, then
             the returned quantities depend on what is present.
             If ``None/Opt.NONE`` it will not return any SCF charges.
             If both `imd` and `iscf` are ``None`` then only the final charges will be returned.
         imd: int or Opt, optional
             index (0-based) of the md step you want the charges for.
-            If the enum specifier `Opt.ANY` or `Opt.ALL` are used, then
+            If the enum specifier `Opt.ANY` or `Opt.ALL`/`...` are used, then
             the returned quantities depend on what is present.
             If ``None/Opt.NONE`` it will not return any MD charges.
             If both `imd` and `iscf` are ``None`` then only the final charges will be returned.
-        key_scf : str, optional
+        key_scf :
             the key lookup for the scf iterations (a ":" will automatically be appended)
-        as_dataframe: boolean, optional
+        as_dataframe:
             whether charges should be returned as a pandas dataframe.
 
         Returns
@@ -1055,7 +1194,7 @@ class stdoutSileSiesta(SileSiesta):
             if a specific MD+SCF index is requested (or special cases where output is
             not complete)
         list of numpy.ndarray
-            if one both `iscf` or `imd` is different from ``None/Opt.NONE``.
+            if `iscf` or `imd` is different from ``None/Opt.NONE``.
         pandas.DataFrame
             if `as_dataframe` is requested. The dataframe will have multi-indices if multiple
             SCF or MD steps are requested.
@@ -1078,8 +1217,8 @@ class stdoutSileSiesta(SileSiesta):
                 return _a.arrayf([[None]])
 
         # define helper function for reading voronoi+hirshfeld charges
-        def _voronoi_hirshfeld_charges():
-            """Read output from Voronoi/Hirshfeld charges"""
+        def _charges():
+            """Read output from Voronoi/Hirshfeld/Mulliken charges"""
             nonlocal pd
 
             # Expecting something like this (NC/SOC)
@@ -1090,11 +1229,17 @@ class stdoutSileSiesta(SileSiesta):
             # Voronoi Atomic Populations:
             # Atom #     dQatom  Atom pop        Sz  Species
             #      1   -0.02936   4.02936   0.00000  C
+            # In 5.2 this now looks like this:
+            # Voronoi Atomic Populations:
+            # Atom #  charge [q]  valence [e]        Sz  Species
+            #      1    -0.02936      4.02936   0.00000  C
 
             # first line is the header
             header = (
                 self.readline()
-                .replace("dQatom", "dq")  # dQatom in master
+                .replace("charge [q]", "dq")  # charge [q] in 5.2
+                .replace("valence [e]", "e")  # in 5.2
+                .replace("dQatom", "dq")  # dQatom in 5.0
                 .replace(" Qatom", " dq")  # Qatom in 4.1
                 .replace("Atom pop", "e")  # not found in 4.1
                 .split()
@@ -1111,16 +1256,15 @@ class stdoutSileSiesta(SileSiesta):
 
             # We have found the header, prepare a list to read the charges
             atom_charges = []
-            line = " "
-            while line != "":
+            while (line := self.readline()) != "":
                 try:
-                    line = self.readline()
                     charge_vals = _parse_charge(line)
                     atom_charges.append(charge_vals)
                 except Exception:
                     # We already have the charge values and we reached a line that can't be parsed,
                     # this means we have reached the end.
                     break
+
             if pd is None:
                 # not as_dataframe
                 return _a.arrayf(atom_charges)
@@ -1139,26 +1283,197 @@ class stdoutSileSiesta(SileSiesta):
             )
 
         # define helper function for reading voronoi+hirshfeld charges
-        def _mulliken_charges():
+        def _mulliken_charges_pre52():
             """Read output from Mulliken charges"""
-            raise NotImplementedError("Mulliken charges are not implemented currently")
+            nonlocal pd
+
+            # Expecting something like this (NC/SOC)
+            # mulliken: Atomic and Orbital Populations:
+
+            # Species: Cl
+
+            # Atom      Orb        Charge      Spin       Svec
+            # ----------------------------------------------------------------
+            #     1  1 3s         1.75133   0.00566      0.004   0.004  -0.000
+            #     1  2 3s         0.09813   0.00658     -0.005  -0.005   0.000
+            #     1  3 3py        1.69790   0.21531     -0.161  -0.142   0.018
+            #     1  4 3pz        1.72632   0.15770     -0.086  -0.132  -0.008
+            #     1  5 3px        1.81369   0.01618     -0.004   0.015  -0.004
+            #     1  6 3py       -0.04663   0.02356     -0.017  -0.016  -0.000
+            #     1  7 3pz       -0.04167   0.01560     -0.011  -0.011   0.001
+            #     1  8 3px       -0.02977   0.00920     -0.006  -0.007   0.000
+            #     1  9 3Pdxy      0.00595   0.00054     -0.000  -0.000  -0.000
+            #     1 10 3Pdyz      0.00483   0.00073     -0.001  -0.001  -0.000
+            #     1 11 3Pdz2      0.00515   0.00098     -0.001  -0.001  -0.000
+            #     1 12 3Pdxz      0.00604   0.00039     -0.000  -0.000   0.000
+            #     1 13 3Pdx2-y2   0.00607   0.00099     -0.001  -0.001   0.000
+            #     1     Total     6.99733   0.41305     -0.288  -0.296   0.007
+
+            # Define the function that parses the charges
+            def _parse_charge_total_nc(line):  # non-colinear and soc
+                atom_idx, _, *vals = line.split()
+                # assert that this is a proper line
+                # this should catch cases where the following line of charge output
+                # is still parseable
+                # atom_idx = int(atom_idx)
+                return int(atom_idx), list(map(float, vals))
+
+            def _parse_charge_total(line):  # unpolarized and colinear spin
+                atom_idx, val, *_ = line.split()
+                return int(atom_idx), float(val)
+
+            # Define the function that parses a single species
+            def _parse_species_nc():  # non-colinear and soc
+                nonlocal header, atom_idx, atom_charges
+
+                # The mulliken charges are organized per species where the charges
+                # for each species are enclosed by dashes (-----)
+
+                # Step to header
+                _, line = self.step_to("Atom", allow_reread=False)
+                if header is None:
+                    header = (
+                        line.replace("Charge", "e")
+                        .replace("Spin", "S")
+                        .replace(
+                            "Svec", "Sx Sy Sz"
+                        )  # Split Svec into Cartesian components
+                        .split()
+                    )[2:]
+
+                # Skip over the starting ---- line
+                self.readline()
+
+                # Read until closing ---- line
+                while "----" not in (line := self.readline()):
+                    if "Total" in line:
+                        ia, charge_vals = _parse_charge_total_nc(line)
+                        atom_idx.append(ia)
+                        atom_charges.append(charge_vals)
+
+            def _parse_spin_pol():  # unpolarized and colinear spin
+                nonlocal atom_idx, atom_charges
+
+                # The mulliken charges are organized per spin
+                # polarization (UP/DOWN). The end of a spin
+                # block is marked by a Qtot
+
+                # Read until we encounter "mulliken: Qtot"
+                def try_parse_int(s):
+                    try:
+                        int(s)
+                    except ValueError:
+                        return False
+                    else:
+                        return True
+
+                while "mulliken: Qtot" not in (line := self.readline()):
+                    words = line.split()
+                    if len(words) > 0 and try_parse_int(words[0]):
+                        # This should be a line containing the total charge for an atom
+                        ia, charge = _parse_charge_total(line)
+                        atom_idx.append(ia)
+                        atom_charges.append([charge])
+
+            # Determine with which spin type we are dealing
+            if self.info.spin.is_unpolarized:  # UNPOLARIZED
+                # No spin components so just parse charge
+                atom_charges = []
+                atom_idx = []
+                header = ["e"]
+                _parse_spin_pol()
+
+            elif self.info.spin.is_polarized:
+                # Parse both spin polarizations
+                atom_charges_pol = []
+                header = ["e", "Sz"]
+                for s in ("UP", "DOWN"):
+                    atom_charges = []
+                    atom_idx = []
+                    self.step_to(f"mulliken: Spin {s}", allow_reread=False)
+                    _parse_spin_pol()
+                    atom_charges_pol.append(atom_charges)
+
+                # Compute the charge and spin of each atom
+                atom_charges_pol_array = _a.arrayf(atom_charges_pol)
+                atom_q = (
+                    atom_charges_pol_array[0, :, 0] + atom_charges_pol_array[1, :, 0]
+                )
+                atom_s = (
+                    atom_charges_pol_array[0, :, 0] - atom_charges_pol_array[1, :, 0]
+                )
+                atom_charges[:] = np.stack((atom_q, atom_s), axis=-1)
+
+            elif not self.info.spin.is_diagonal:
+                # Parse each species
+                atom_charges = []
+                atom_idx = []
+                header = None
+                for _ in range(self.info.nspecies):
+                    found, _ = self.step_to("Species:", allow_reread=False)
+                    _parse_species_nc()
+
+            else:
+                raise NotImplementedError(
+                    "Something went wrong... Couldn't parse file."
+                )
+
+            # Convert to array and sort in the order of the atoms
+            sort_idx = np.argsort(atom_idx)
+            atom_charges_array = _a.arrayf(atom_charges)[sort_idx]
+
+            if pd is None:
+                # not as_dataframe
+                return atom_charges_array
+
+            # determine how many columns we have
+            # this will remove atom indices and species, so only inside
+            ncols = len(atom_charges[0])
+            assert ncols == len(header)
+
+            # the precision is limited, so no need for double precision
+            return pd.DataFrame(
+                atom_charges_array,
+                columns=header,
+                dtype=np.float32,
+                index=pd.RangeIndex(stop=len(atom_charges), name="atom"),
+            )
+
+        # split method to retrieve options
+        namel, *opts = namel.split(":")
 
         # Check that a known charge has been requested
         if namel == "voronoi":
-            _r_charge = _voronoi_hirshfeld_charges
+            _r_charge = _charges
             charge_keys = [
                 "Voronoi Atomic Populations",
                 "Voronoi Net Atomic Populations",
             ]
         elif namel == "hirshfeld":
-            _r_charge = _voronoi_hirshfeld_charges
+            _r_charge = _charges
             charge_keys = [
                 "Hirshfeld Atomic Populations",
                 "Hirshfeld Net Atomic Populations",
             ]
         elif namel == "mulliken":
-            _r_charge = _mulliken_charges
+            _r_charge = _mulliken_charges_pre52
             charge_keys = ["mulliken: Atomic and Orbital Populations"]
+            if "<5.2" in opts:
+                pass
+
+            else:
+                # check if version is understandable
+                version = self.info.version
+                try:
+                    if version.version[:2] >= (5, 2):
+                        _r_charge = _charges
+                        charge_keys = [
+                            "Mulliken Atomic Populations",
+                            "Mulliken Net Atomic Populations",
+                        ]
+                except Exception:
+                    pass
+
         else:
             raise ValueError(
                 f"{self.__class__.__name__}.read_charge name argument should be one of [voronoi, hirshfeld, mulliken], got {name}?"
@@ -1178,6 +1493,7 @@ class stdoutSileSiesta(SileSiesta):
             key_scf,
             *charge_keys,
         ]
+
         # adjust the below while loop to take into account any additional
         # segments of search_keys
         IDX_SCF_END = [0, 1]
@@ -1207,9 +1523,11 @@ class stdoutSileSiesta(SileSiesta):
         FOUND_MD = False
         FOUND_FINAL = False
 
-        # TODO whalrus
-        ret = self.step_to(search_keys, case=True, ret_index=True, allow_reread=False)
-        while ret[0]:
+        while (
+            ret := self.step_to(
+                search_keys, case=True, ret_index=True, allow_reread=False
+            )
+        )[0]:
             if ret[2] in IDX_SCF_END:
                 # we finished all SCF iterations
                 current_state = state.MD
@@ -1270,11 +1588,6 @@ class stdoutSileSiesta(SileSiesta):
 
                 current_state = state.CHARGE
 
-            # step to next entry
-            ret = self.step_to(
-                search_keys, case=True, ret_index=True, allow_reread=False
-            )
-
         if not any((FOUND_SCF, FOUND_MD, FOUND_FINAL)):
             raise SileError(f"{self!s} does not contain any charges ({name})")
 
@@ -1299,9 +1612,9 @@ class stdoutSileSiesta(SileSiesta):
                 md_scf_charge = pd.concat(
                     [
                         pd.concat(
-                            iscf, keys=pd.RangeIndex(1, len(iscf) + 1, name="iscf")
+                            iscf_, keys=pd.RangeIndex(1, len(iscf_) + 1, name="iscf")
                         )
-                        for iscf in md_scf_charge
+                        for iscf_ in md_scf_charge
                     ],
                     keys=pd.RangeIndex(1, len(md_scf_charge) + 1, name="imd"),
                 )
@@ -1336,6 +1649,9 @@ class stdoutSileSiesta(SileSiesta):
             flag :
                 corrected flag
             """
+            if flag is Ellipsis:
+                flag = Opt.ALL
+
             if isinstance(flag, Opt):
                 # correct flag depending on what `found` is
                 # If the values have been found we

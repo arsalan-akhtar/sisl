@@ -3,7 +3,7 @@ ci
 .coverage
 .*/
 dist
-build
+build*
 *.pyc
 *.so
 *.c
@@ -12,9 +12,11 @@ __config__.py
 .*/
 docs/build
 docs/**/generated/
+docs/tutorials/**/*.{cube,xyz,fdf}
 */sisl.egg-info
 src/sisl/**/*.html
 src/sisl/_version.py
+src/sisl/_debug_info.py
 
 # OS generated files
 .DS_Store

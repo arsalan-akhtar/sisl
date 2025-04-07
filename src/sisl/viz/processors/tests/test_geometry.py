@@ -274,7 +274,7 @@ def test_add_xyz_to_bonds_dataset(geometry):
     assert isinstance(xyz_bonds, xr.Dataset)
     assert "xyz" in xyz_bonds.data_vars
     assert xyz_bonds.xyz.shape == (len(bonds.bonds), 2, 3)
-    assert np.allclose(xyz_bonds.xyz[:, 0], geometry.xyz[bonds.bonds[:, 0]])
+    assert np.allclose(xyz_bonds.xyz[:, 0], geometry.xyz[np.ravel(bonds.bonds[:, 0])])
 
 
 def test_sanitize_bonds_selection(geometry):

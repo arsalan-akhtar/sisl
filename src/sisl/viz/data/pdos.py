@@ -4,8 +4,9 @@
 # TODO when forward refs work with locals
 # from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Optional, Sequence, Union
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 from xarray import DataArray
@@ -132,11 +133,11 @@ class PDOSData(OrbitalData):
                 If nSpin == 4, the calculation is assumed to be with noncolinear spin.
         geometry: sisl.Geometry
             The geometry to which the data corresponds. It must have as many orbitals as the PDOS data.
-        E: numpy.ndarray of shape (nE,)
+        E:
             The energies to which the data corresponds.
-        E_units: str, optional
+        E_units:
             The units of the energy. Defaults to 'eV'.
-        extra_attrs: dict
+        extra_attrs:
             A dictionary of extra attributes to be added to the DataArray. One of the attributes that
         """
         # Understand what the spin class is for this data.
@@ -200,13 +201,36 @@ class PDOSData(OrbitalData):
     @new.register
     @classmethod
     def from_path(cls, path: Path, *args, **kwargs):
-        """Creates a sile from the path and tries to read the PDOS from it."""
+        """Creates a sile from the path and tries to read the PDOS from it.
+
+        Parameters
+        ----------
+        path:
+            The path to the file to read the PDOS from.
+
+            Depending of the sile extracted from the path, the corresponding `PDOSData` constructor
+            will be called.
+        **kwargs:
+            Extra arguments to be passed to the PDOSData constructor.
+        """
         return cls.new(sisl.get_sile(path), *args, **kwargs)
 
     @new.register
     @classmethod
     def from_string(cls, string: str, *args, **kwargs):
-        """Assumes the string is a path to a file"""
+        """Converts the string to a path and calls the `from_path` method.
+
+        Parameters
+        ----------
+        string:
+            The string to be converted to a path.
+        **kwargs:
+            Extra arguments directly passed to the `from_path` method.
+
+        See Also
+        --------
+        from_path: The arguments are passed to this method.
+        """
         return cls.new(Path(string), *args, **kwargs)
 
     @new.register
@@ -223,17 +247,15 @@ class PDOSData(OrbitalData):
 
         Parameters
         ----------
-        fdf: fdfSileSiesta
+        fdf:
             The fdf file to read the PDOS from.
-        source: Literal["pdos", "tbtnc", "wfsx", "hamiltonian"], optional
+        source:
             The source to read the PDOS data from.
         **kwargs
             Extra arguments to be passed to the PDOSData constructor, which depends
             on the source requested.
 
-            Except for the hamiltonian source, no extra arguments are needed (and they
-            won't be used). See PDOSData.from_hamiltonian for the extra arguments accepted
-            by the hamiltonian data constructor.
+            One should check ``PDOSData.from_*`` for details for each PDOS retrieval.
         """
         if source == "pdos":
             sile = FileDataSIESTA(fdf=fdf, cls=pdosSileSiesta)
@@ -248,7 +270,7 @@ class PDOSData(OrbitalData):
 
             geometry = fdf.read_geometry(output=True)
 
-            return cls.new(sile, geometry=geometry)
+            return cls.new(sile, geometry=geometry, **kwargs)
         elif source == "wfsx":
             sile = FileDataSIESTA(fdf=fdf, cls=wfsxSileSiesta)
 
@@ -265,7 +287,13 @@ class PDOSData(OrbitalData):
     @new.register
     @classmethod
     def from_siesta_pdos(cls, pdos_file: pdosSileSiesta):
-        """Gets the PDOS from a SIESTA PDOS file"""
+        """Gets the PDOS from a SIESTA PDOS file.
+
+        Parameters
+        ----------
+        pdos_file:
+            The PDOS file to read the PDOS from.
+        """
         # Get the info from the .PDOS file
         geometry, E, PDOS = pdos_file.read_data()
 
@@ -274,34 +302,77 @@ class PDOSData(OrbitalData):
     @new.register
     @classmethod
     def from_tbtrans(
-        cls, tbt_nc: tbtncSileTBtrans, geometry: Union[Geometry, None] = None
+        cls,
+        tbt_nc: tbtncSileTBtrans,
+        geometry: Union[Geometry, None] = None,
+        elec: Union[int, str, None] = None,
     ):
-        """Reads the PDOS from a *.TBT.nc file coming from a TBtrans run."""
-        PDOS = tbt_nc.DOS(sum=False).T
+        """Reads the PDOS from a *.TBT.nc file coming from a TBtrans run.
+
+        Parameters
+        ----------
+        tbt_nc:
+            The TBtrans file to read the PDOS from.
+        geometry:
+            Full geometry of the system (including scattering and electrode regions).
+            Right now only used to get the basis of each atom, which is not
+            stored in the TBT.nc file.
+        elec:
+            which electrode to get the PDOS from. Can be None for the Green function,
+            otherwise the specified. Otherwise it is the index/name of an electrode
+            so that one gets the ADOS from that electrode.
+        """
+        if elec is None:
+            elec = "Gf"
+            PDOS = tbt_nc.DOS(sum=False).T
+        else:
+            PDOS = tbt_nc.ADOS(elec, sum=False).T
+            elec = f"A{elec}"
         E = tbt_nc.E
 
         read_geometry_kwargs = {}
         if geometry is not None:
-            read_geometry_kwargs["atom"] = geometry.atoms
+            read_geometry_kwargs["atoms"] = geometry.atoms
 
         # Read the geometry from the TBT.nc file and get only the device part
         geometry = tbt_nc.read_geometry(**read_geometry_kwargs).sub(tbt_nc.a_dev)
 
-        return cls.new(PDOS, geometry, E)
+        return cls.new(PDOS, geometry, E, extra_attrs={"elec": elec})
 
     @new.register
     @classmethod
     def from_hamiltonian(
         cls,
         H: Hamiltonian,
-        kgrid=None,
-        kgrid_displ=(0, 0, 0),
-        Erange=(-2, 2),
-        E0=0,
-        nE=100,
+        kgrid: Tuple[int, int, int] = None,
+        kgrid_displ: Tuple[float, float, float] = (0, 0, 0),
+        Erange: Tuple[float, float] = (-2, 2),
+        E0: float = 0,
+        nE: int = 100,
         distribution=get_distribution("gaussian"),
     ):
-        """Calculates the PDOS from a sisl Hamiltonian."""
+        """Calculates the PDOS from a sisl Hamiltonian.
+
+        Parameters
+        ----------
+        H:
+            The Hamiltonian from which to calculate the PDOS.
+        kgrid:
+            Number of kpoints in each reciprocal space direction. A Monkhorst-pack grid
+            will be generated from this specification. The PDOS will be averaged over the
+            whole k-grid.
+        kgrid_displ:
+            Displacement of the Monkhorst-Pack grid.
+        Erange:
+            Energy range (min and max) for the PDOS calculation.
+        E0:
+            Energy shift for the PDOS calculation.
+        nE:
+            Number of energy points for the PDOS calculation.
+        distribution:
+            The distribution to use for smoothing the PDOS along the energy axis.
+            Each state will be broadened by this distribution.
+        """
 
         # Get the kgrid or generate a default grid by checking the interaction between cells
         # This should probably take into account how big the cell is.
@@ -359,7 +430,27 @@ class PDOSData(OrbitalData):
         E0: float = 0,
         distribution=get_distribution("gaussian"),
     ):
-        """Generates the PDOS values from a file containing eigenstates."""
+        """Generates the PDOS values from a file containing eigenstates.
+
+        Parameters
+        ----------
+        wfsx_file:
+            The file containing the eigenstates.
+        H:
+            The Hamiltonian to which the eigenstates correspond. Used to get the overlap
+            matrix and the spin type.
+        geometry:
+            The geometry of the system. If not provided, it is extracted from the Hamiltonian.
+        Erange:
+            The energy range in which to calculate the PDOS.
+        nE:
+            The number of energy points for which to calculate the PDOS.
+        E0:
+            Reference energy to take as 0. Energy levels will be shifted by `-E0`.
+        distribution:
+            The distribution to use for smoothing the PDOS along the energy axis.
+            Each state will be broadened by this distribution.
+        """
         if geometry is None:
             geometry = getattr(H, "geometry", None)
 
@@ -371,8 +462,8 @@ class PDOSData(OrbitalData):
         sizes = wfsx_sile.read_sizes()
         # Check that spin sizes of hamiltonian and wfsx file match
         assert (
-            H.spin.size == sizes.nspin
-        ), f"Hamiltonian has spin size {H.spin.size} while file has spin size {sizes.nspin}"
+            H.spin.size(H.dtype) == sizes.nspin
+        ), f"Hamiltonian has spin size {H.spin.size(H.dtype)} while file has spin size {sizes.nspin}"
         # Get the size of the spin channel. The size returned might be 8 if it is a spin-orbit
         # calculation, but we need only 4 spin channels (total, x, y and z), same as with non-colinear
         nspin = min(4, sizes.nspin)

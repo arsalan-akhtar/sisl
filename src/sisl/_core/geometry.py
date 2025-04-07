@@ -7,16 +7,17 @@ from __future__ import annotations
 import logging
 import warnings
 from collections import OrderedDict
+from collections.abc import Iterator, Sequence
 from functools import singledispatchmethod
 from itertools import product
 from math import acos
 from numbers import Integral, Real
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from numpy import (
-    argsort,
     bool_,
     ceil,
     concatenate,
@@ -24,21 +25,19 @@ from numpy import (
     dot,
     floor,
     int32,
-    isin,
     ndarray,
-    split,
     sqrt,
     square,
     tile,
     unique,
 )
-from scipy.sparse import csr_array
+from scipy.sparse import csr_matrix
 
 import sisl._array as _a
 from sisl._category import Category, GenericCategory
 from sisl._dispatch_class import _Dispatchs
 from sisl._dispatcher import AbstractDispatch, ClassDispatcher, TypeDispatcher
-from sisl._help import isndarray
+from sisl._help import has_module, isndarray
 from sisl._indices import (
     indices_gt_le,
     indices_in_sphere_with_dist,
@@ -46,15 +45,16 @@ from sisl._indices import (
     list_index_le,
 )
 from sisl._internal import set_module
+from sisl._lib._argparse import SislHelpFormatter
 from sisl._math_small import cross3, is_ascending, xyz_to_spherical_cos_phi
 from sisl._namedindex import NamedIndex
 from sisl.messages import SislError, deprecate_argument, deprecation, info, warn
 from sisl.shape import Cube, Shape, Sphere
 from sisl.typing import (
-    ArrayLike,
     AtomsIndex,
+    AtomsLike,
     CellAxes,
-    NDArray,
+    LatticeLike,
     OrbitalsIndex,
     SileLike,
 )
@@ -134,12 +134,12 @@ class Geometry(
 
     Parameters
     ----------
-    xyz : array_like
+    xyz :
         atomic coordinates
         ``xyz[i, :]`` is the atomic coordinate of the i'th atom.
-    atoms : array_like or Atoms
+    atoms :
         atomic species retrieved from the `PeriodicTable`
-    lattice : Lattice
+    lattice :
         the unit-cell describing the atoms in a periodic
         super-cell
 
@@ -182,7 +182,13 @@ class Geometry(
         "0.15",
         "0.16",
     )
-    def __init__(self, xyz: ArrayLike, atoms=None, lattice=None, names=None):
+    def __init__(
+        self,
+        xyz: npt.ArrayLike,
+        atoms: Optional[AtomsLike] = None,
+        lattice: Optional[LatticeLike] = None,
+        names=None,
+    ):
         # Create the geometry coordinate, be aware that we do not copy!
         self.xyz = _a.asarrayd(xyz, order="C").reshape(-1, 3)
 
@@ -201,7 +207,7 @@ class Geometry(
 
         self._init_lattice(lattice)
 
-    def _init_lattice(self, lattice):
+    def _init_lattice(self, lattice: Optional[LatticeLike]) -> None:
         """Initializes the supercell by *calculating* the size if not supplied
 
         If the supercell has not been passed we estimate the unit cell size
@@ -306,24 +312,24 @@ class Geometry(
         return self.no * self.n_s
 
     @property
-    def firsto(self) -> NDArray[np.int32]:
+    def firsto(self) -> npt.NDArray[np.int32]:
         """The first orbital on the corresponding atom"""
         return self.atoms.firsto
 
     @property
-    def lasto(self) -> NDArray[np.int32]:
+    def lasto(self) -> npt.NDArray[np.int32]:
         """The last orbital on the corresponding atom"""
         return self.atoms.lasto
 
     @property
-    def orbitals(self) -> ndarray:
+    def orbitals(self) -> list[Orbital]:
         """List of orbitals per atom"""
         return self.atoms.orbitals
 
     ## End size of geometry
 
     @property
-    def fxyz(self) -> NDArray[np.float64]:
+    def fxyz(self) -> npt.NDArray[np.float64]:
         """Returns geometry coordinates in fractional coordinates"""
         return dot(self.xyz, self.icell.T)
 
@@ -361,8 +367,11 @@ class Geometry(
         - name -> self._names[name]
         - `Atom` -> self.atoms.index(atom)
         - range/list/ndarray -> ndarray
+        - `...` -> ndarray
         """
         if atoms is None:
+            return np.arange(self.na)
+        elif atoms is Ellipsis:
             return np.arange(self.na)
         atoms = _a.asarray(atoms)
         if atoms.size == 0:
@@ -447,6 +456,8 @@ class Geometry(
         """
         if orbitals is None:
             return np.arange(self.no)
+        elif orbitals is Ellipsis:
+            return np.arange(self.no)
         orbitals = _a.asarray(orbitals)
         if orbitals.size == 0:
             return _a.asarrayl([])
@@ -466,7 +477,7 @@ class Geometry(
         if start is None:
             start = 0
         if stop is None:
-            stop = self.na
+            stop = self.no
         if step is None:
             step = 1
         return np.arange(start, stop, step)
@@ -511,7 +522,7 @@ class Geometry(
 
     def as_primary(
         self, na_primary: int, axes: Sequence[int] = (0, 1, 2), ret_super: bool = False
-    ) -> Union[Geometry, Tuple[Geometry, Lattice]]:
+    ) -> Union[Geometry, tuple[Geometry, Lattice]]:
         """Reduce the geometry to the primary unit-cell comprising `na_primary` atoms
 
         This will basically try and find the tiling/repetitions required for the geometry to only have
@@ -958,7 +969,7 @@ class Geometry(
         iR: int = 20,
         R: Optional[float] = None,
         atoms: AtomsIndex = None,
-    ) -> Iterator[Tuple[ndarray, ndarray]]:
+    ) -> Iterator[tuple[ndarray, ndarray]]:
         """Perform the *random* block-iteration by randomly selecting the next center of block"""
 
         # We implement yields as we can then do nested iterators
@@ -1037,7 +1048,7 @@ class Geometry(
 
     def iter_block_shape(
         self, shape=None, iR: int = 20, atoms: AtomsIndex = None
-    ) -> Iterator[Tuple[ndarray, ndarray]]:
+    ) -> Iterator[tuple[ndarray, ndarray]]:
         """Perform the *grid* block-iteration by looping a grid"""
 
         # We implement yields as we can then do nested iterators
@@ -1172,7 +1183,7 @@ class Geometry(
         R: Optional[float] = None,
         atoms: AtomsIndex = None,
         method: str = "rand",
-    ) -> Iterator[Tuple[ndarray, ndarray]]:
+    ) -> Iterator[tuple[ndarray, ndarray]]:
         """Iterator for performance critical loops
 
         NOTE: This requires that `R` has been set correctly as the maximum interaction range.
@@ -1250,7 +1261,7 @@ class Geometry(
         atol: float = 0.1,
         offset: Sequence[float] = (0.0, 0.0, 0.0),
         offset_other: Sequence[float] = (0.0, 0.0, 0.0),
-    ) -> Tuple[ndarray, ndarray]:
+    ) -> tuple[ndarray, ndarray]:
         """Calculate the overlapping indices between two geometries
 
         Find equivalent atoms (in the primary unit-cell only) in two geometries.
@@ -1463,15 +1474,15 @@ class Geometry(
 
         Parameters
         ----------
-        atoms : array_like of int or Atom
+        atoms :
             indices of atoms or `Atom` that will be reduced in size according to `orbitals`
-        orbitals : array_like of int or Orbital
+        orbitals :
             indices of the orbitals on `atoms` that are retained in the geometry, the list of
             orbitals will be sorted.
 
         Notes
         -----
-        Future implementations may allow one to re-arange orbitals using this method.
+        Future implementations may allow one to re-arrange orbitals using this method.
 
         When using this method the internal species list will be populated by another specie
         that is named after the orbitals removed. This is to distinguish different atoms.
@@ -2972,7 +2983,7 @@ class Geometry(
 
     def a2transpose(
         self, atoms1: AtomsIndex, atoms2: AtomsIndex = None
-    ) -> Tuple[ndarray, ndarray]:
+    ) -> tuple[ndarray, ndarray]:
         """Transposes connections from `atoms1` to `atoms2` such that supercell connections are transposed
 
         When handling supercell indices it is useful to get the *transposed* connection. I.e. if you have
@@ -3038,7 +3049,7 @@ class Geometry(
 
     def o2transpose(
         self, orb1: OrbitalsIndex, orb2: Optional[OrbitalsIndex] = None
-    ) -> Tuple[ndarray, ndarray]:
+    ) -> tuple[ndarray, ndarray]:
         """Transposes connections from `orb1` to `orb2` such that supercell connections are transposed
 
         When handling supercell indices it is useful to get the *transposed* connection. I.e. if you have
@@ -3513,7 +3524,9 @@ class Geometry(
                 from scipy.stats import mode
 
                 def func(lst):
-                    return mode(lst, keepdims=False)[0]
+                    # We don't need keepdims=False, because an array of size 1
+                    # can be broadcasted to a single element.
+                    return mode(lst)[0]
 
             else:
                 try:
@@ -3552,7 +3565,7 @@ class Geometry(
         periodic: Optional[Union[Sequence[bool], CellAxes]] = None,
         atol: float = 1e-5,
         origin: Sequence[float] = (0.0, 0.0, 0.0),
-    ) -> Tuple[ndarray, ndarray, ndarray]:
+    ) -> tuple[ndarray, ndarray, ndarray]:
         """Find all atoms within a provided supercell
 
         Note this function is rather different from `close` and `within`.
@@ -3596,7 +3609,10 @@ class Geometry(
         if periodic is None:
             periodic = self.pbc.nonzero()[0]
         elif isinstance(periodic, bool):
-            periodic = (0, 1, 2)
+            if periodic:
+                periodic = (0, 1, 2)
+            else:
+                periodic = ()
         else:
             try:
                 periodic = map(direction, listify(periodic)) | listify
@@ -3616,23 +3632,24 @@ class Geometry(
 
         # 1. Number of times each lattice vector must be expanded to fit
         #    inside the "possibly" larger `lattice`.
-        idx = dot(lattice.cell, self.icell.T)
-        tile_min = floor(idx.min(0))
+        idx = lattice.cell @ self.icell.T
+        tile_min = floor(idx.min(0)).astype(dtype=int32)
         tile_max = ceil(idx.max(0)).astype(dtype=int32)
 
         # Intrinsic offset (when atomic coordinates are outside primary unit-cell)
-        idx = self.fxyz
-        tmp = floor(idx.min(0))
-        tile_min = np.where(tile_min < tmp, tile_min, tmp).astype(dtype=int32)
-        tmp = ceil(idx.max(0))
-        tile_max = np.where(tmp < tile_max, tile_max, tmp).astype(dtype=int32)
-        del idx, tmp
+        fxyz = np.round(self.fxyz, decimals=5)
+        # We don't collapse this as it is necessary for correcting isc further below
+        fxyz_ifloor = floor(fxyz).astype(dtype=int32)
+        fxyz_iceil = ceil(fxyz).max(0).astype(dtype=int32)
+        tile_min = np.minimum(tile_min, fxyz_ifloor.min(0))
+        tile_max = np.maximum(tile_max, fxyz_iceil)
+        del idx, fxyz
 
         # 1a) correct for origin displacement
-        idx = floor(dot(lattice.origin, self.icell.T))
-        tile_min = np.where(tile_min < idx, tile_min, idx).astype(dtype=int32)
-        idx = floor(dot(origin, self.icell.T))
-        tile_min = np.where(tile_min < idx, tile_min, idx).astype(dtype=int32)
+        idx = floor(lattice.origin @ self.icell.T)
+        tile_min = np.minimum(tile_min, idx).astype(dtype=int32)
+        idx = floor(origin @ self.icell.T)
+        tile_min = np.minimum(tile_min, idx).astype(dtype=int32)
 
         # 2. Reduce tiling along non-periodic directions
         tile_min[non_periodic] = 0
@@ -3653,7 +3670,14 @@ class Geometry(
 
         # Make sure that full_geom doesn't return coordinates outside the unit cell
         # for non periodic directions
-        nsc = full_geom.nsc.copy()
+        nsc = full_geom.nsc.copy() // 2
+
+        # If we have atoms outside the primary unit-cell in the original
+        # cell, then we should consider an nsc large enough to encompass this
+        nsc = np.maximum(nsc, fxyz_iceil)
+        nsc = np.maximum(nsc, -fxyz_ifloor.min(0))
+        nsc = nsc * 2 + 1
+
         nsc[non_periodic] = 1
         full_geom.set_nsc(nsc)
 
@@ -3666,7 +3690,7 @@ class Geometry(
         # Figure out supercell connections in the smaller indices
         # Since we have shifted all coordinates into the primary unit cell we
         # are sure that these fxyz are [0:1[
-        fxyz = dot(xyz, self.icell.T)
+        fxyz = xyz @ self.icell.T
 
         # Since there are numerical errors for the above operation
         # we *have* to account for possible sign-errors
@@ -3685,15 +3709,20 @@ class Geometry(
 
         # Convert indices to unit-cell indices and also return coordinates and
         # infinite supercell indices
-        return self.asc2uc(idx), xyz, isc
+        ia = self.asc2uc(idx)
+        return ia, xyz, isc - fxyz_ifloor[ia]
 
-    def _orbital_values(self, grid_shape: Tuple[int, int, int]):
+    def _orbital_values(
+        self, grid_shape: tuple[int, int, int], truncate_with_nsc: bool = False
+    ):
         r"""Calculates orbital values for a given grid.
 
         Parameters
         ----------
         grid_shape:
            the grid shape (i.e. resolution) in which to calculate the orbital values.
+        truncate_with_nsc:
+            if True, only consider atoms within the geometry's auxiliary cell.
 
         Notes
         -----
@@ -3714,7 +3743,7 @@ class Geometry(
         # supercell by add_R in each direction.
         # For extremely skewed lattices this will be way too much, hence we make
         # them square.
-        o = self.lattice.to.Cuboid(True)
+        o = self.lattice.to.Cuboid(orthogonal=True)
         lattice = Lattice(o._v + np.diag(2 * add_R), origin=o.origin - add_R)
 
         # Retrieve all atoms within the grid supercell
@@ -3722,9 +3751,10 @@ class Geometry(
         IA, XYZ, ISC = self.within_inf(lattice, periodic=self.pbc)
         XYZ -= self.lattice.origin.reshape(1, 3)
 
-        # within_inf translates atoms to the unit cell to compute
-        # supercell indices. Here we revert that
-        ISC -= np.floor(self.fxyz[IA]).astype(int32)
+        # Don't consider atoms that are outside of the geometry's auxiliary cell.
+        if truncate_with_nsc:
+            mask = (abs(ISC) <= self.nsc // 2).all(axis=1)
+            IA, XYZ, ISC = IA[mask], XYZ[mask], ISC[mask]
 
         def xyz2spherical(xyz, offset):
             """Calculate the spherical coordinates from indices"""
@@ -3742,12 +3772,43 @@ class Geometry(
 
             corners_i = grid.index(corners)
 
-            cmin = np.maximum(corners_i.min(axis=0), 0)
-            cmax = np.maximum(corners_i.max(axis=0) + 1, 0)
+            cmin = corners_i.min(axis=0)
+            cmax = corners_i.max(axis=0) + 1
+            sh = grid.shape
 
-            rx = slice(cmin[0], min(cmax[0], grid.shape[0]))
-            ry = slice(cmin[1], min(cmax[1], grid.shape[1]))
-            rz = slice(cmin[2], min(cmax[2], grid.shape[2]))
+            # direct if-statements are 4-5 times faster than min+max
+            # These subsequent 25 lines are equivalent to:
+            # cmin = np.maximum(0, np.minimum(cmin, sh))
+            # the numpy equivalents are way too slow in this case.
+            if cmin[0] < 0:
+                cmin[0] = 0
+            elif sh[0] < cmin[0]:
+                cmin[0] = sh[0]
+            if cmin[1] < 0:
+                cmin[1] = 0
+            elif sh[1] < cmin[1]:
+                cmin[1] = sh[1]
+            if cmin[2] < 0:
+                cmin[2] = 0
+            elif sh[2] < cmin[2]:
+                cmin[2] = sh[2]
+
+            if cmax[0] < 0:
+                cmax[0] = 0
+            elif sh[0] < cmax[0]:
+                cmax[0] = sh[0]
+            if cmax[1] < 0:
+                cmax[1] = 0
+            elif sh[1] < cmax[1]:
+                cmax[1] = sh[1]
+            if cmax[2] < 0:
+                cmax[2] = 0
+            elif sh[2] < cmax[2]:
+                cmax[2] = sh[2]
+
+            rx = slice(cmin[0], cmax[0])
+            ry = slice(cmin[1], cmax[1])
+            rz = slice(cmin[2], cmax[2])
 
             indices = np.mgrid[rx, ry, rz].reshape(3, -1).T
 
@@ -3884,7 +3945,7 @@ class Geometry(
         grid_indices = grid_indices[:i_value]
         orbital_indices = orbital_indices[:i_value]
 
-        psi_values = csr_array(
+        psi_values = csr_matrix(
             (grid_values, (grid_indices, orbital_indices)),
             shape=(np.prod(grid.shape), sp_grid_geom.no_s),
         )
@@ -4355,7 +4416,7 @@ class Geometry(
             nargs=1,
             metavar="SORT",
             action=Sort,
-            help='Semi-colon separated options for sort, please always encapsulate in quotation ["axis=0;descend;lattice=(1, 2);group=Z"].',
+            help='Semi-colon separated options for sort, please always encapsulate in quotation ["axes=0;descend;lattice=(1, 2);group=Z"].',
         )
 
         # Print some common information about the
@@ -4426,18 +4487,12 @@ to_dispatch = Geometry.to
 
 # Define base-class for this
 class GeometryNewDispatch(AbstractDispatch):
-    """Base dispatcher from class passing arguments to Geometry class
-
-    This forwards all `__call__` calls to `dispatch`
-    """
-
-    def __call__(self, *args, **kwargs):
-        return self.dispatch(*args, **kwargs)
+    """Base dispatcher from class passing arguments to Geometry class"""
 
 
 # Bypass regular Geometry to be returned as is
 class GeometryNewGeometryDispatch(GeometryNewDispatch):
-    def dispatch(self, geometry, copy=False):
+    def dispatch(self, geometry, copy: bool = False) -> Geometry:
         """Return Geometry, for sanitization purposes"""
         cls = self._get_class()
         if cls != geometry.__class__:
@@ -4456,7 +4511,7 @@ new_dispatch.register(Geometry, GeometryNewGeometryDispatch)
 
 
 class GeometryNewFileDispatch(GeometryNewDispatch):
-    def dispatch(self, *args, **kwargs):
+    def dispatch(self, *args, **kwargs) -> Geometry:
         """Defer the `Geometry.read` method by passing down arguments"""
         cls = self._get_class()
         return cls.read(*args, **kwargs)
@@ -4468,8 +4523,8 @@ new_dispatch.register(Path, GeometryNewFileDispatch)
 
 
 class GeometryNewAseDispatch(GeometryNewDispatch):
-    def dispatch(self, aseg, **kwargs):
-        """Convert an ``ase`` object into a `Geometry`"""
+    def dispatch(self, aseg, **kwargs) -> Geometry:
+        """Convert an `ase.Atoms` object into a `Geometry`"""
         cls = self._get_class()
         Z = aseg.get_atomic_numbers()
         xyz = aseg.get_positions()
@@ -4494,7 +4549,7 @@ except Exception:
 
 
 class GeometryNewpymatgenDispatch(GeometryNewDispatch):
-    def dispatch(self, struct, **kwargs):
+    def dispatch(self, struct, **kwargs) -> Geometry:
         """Convert a ``pymatgen`` structure/molecule object into a `Geometry`"""
         from pymatgen.core import Structure
 
@@ -4539,7 +4594,16 @@ class GeometryToDispatch(AbstractDispatch):
 
 
 class GeometryToSileDispatch(GeometryToDispatch):
-    def dispatch(self, *args, **kwargs):
+    def dispatch(self, *args, **kwargs) -> None:
+        """Writes the geometry to a sile with any optional arguments.
+
+        Examples
+        --------
+
+        >>> geom = si.geom.graphene()
+        >>> geom.to("hello.xyz")
+        >>> geom.to(pathlib.Path("hello.xyz"))
+        """
         geom = self._get_object()
         return geom.write(*args, **kwargs)
 
@@ -4552,7 +4616,8 @@ to_dispatch.register(Path, GeometryToSileDispatch)
 
 
 class GeometryToAseDispatch(GeometryToDispatch):
-    def dispatch(self, **kwargs):
+    def dispatch(self, **kwargs) -> ase.Atoms:
+        """Conversion of `Geometry` to an `ase.Atoms` object"""
         from ase import Atoms as ase_Atoms
 
         geom = self._get_object()
@@ -4566,18 +4631,21 @@ class GeometryToAseDispatch(GeometryToDispatch):
 
 
 to_dispatch.register("ase", GeometryToAseDispatch)
-try:
+if has_module("ase"):
     from ase import Atoms as ase_Atoms
 
     to_dispatch.register(ase_Atoms, GeometryToAseDispatch)
     del ase_Atoms
 
-except ImportError:
-    pass
-
 
 class GeometryTopymatgenDispatch(GeometryToDispatch):
-    def dispatch(self, **kwargs):
+    def dispatch(
+        self, **kwargs
+    ) -> Union[pymatgen.core.Molecule, pymatgen.core.Structure]:
+        """Conversion of `Geometry` to a `pymatgen` object.
+
+        Depending on the periodicity, it can be `Molecule` or `Structure`.
+        """
         from pymatgen.core import Lattice, Molecule, Structure
 
         from sisl._core.atom import PeriodicTable
@@ -4601,7 +4669,9 @@ to_dispatch.register("pymatgen", GeometryTopymatgenDispatch)
 
 
 class GeometryToDataframeDispatch(GeometryToDispatch):
-    def dispatch(self, *args, **kwargs):
+    def dispatch(self, *args, **kwargs) -> pandas.DataFrame:
+        """Convert the geometry to a `pandas.DataFrame` with values stored in columns"""
+
         import pandas as pd
 
         geom = self._get_object()
@@ -4633,14 +4703,11 @@ class GeometryToDataframeDispatch(GeometryToDispatch):
 
 
 to_dispatch.register("dataframe", GeometryToDataframeDispatch)
-try:
+if has_module("pandas"):
     from pandas import DataFrame as pd_DataFrame
 
     to_dispatch.register(pd_DataFrame, GeometryToDataframeDispatch)
     del pd_DataFrame
-
-except ImportError:
-    pass
 
 
 # Clean up
@@ -4717,7 +4784,7 @@ lattice vector.
 
     p = argparse.ArgumentParser(
         exe,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=SislHelpFormatter,
         description=description,
     )
 

@@ -1,13 +1,7 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 # We will use cmake_path for file-name manipulation
 
 list(APPEND CMAKE_MESSAGE_CONTEXT "sisl")
-
-message(STATUS "Building with CMake version: ${CMAKE_VERSION}")
-if(SKBUILD)
-  message(STATUS "Building with scikit-build-core: ${SKBUILD_CORE_VERSION}")
-endif()
-
 
 project(sisl
   DESCRIPTION "Cythonized or fortran codes"
@@ -19,6 +13,20 @@ project(sisl
 
 # Print out the discovered paths
 include(CMakePrintHelpers)
+
+# Build configuration details
+message(STATUS "Build configuration information")
+list(APPEND CMAKE_MESSAGE_INDENT "  ")
+cmake_print_variables(CMAKE_VERSION)
+cmake_print_variables(CMAKE_BUILD_TYPE)
+cmake_print_variables(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+cmake_print_variables(CMAKE_POSITION_INDEPENDENT_CODE)
+cmake_print_variables(CMAKE_INSTALL_PREFIX)
+cmake_print_variables(CMAKE_PREFIX_PATH)
+if(SKBUILD)
+  message(STATUS "scikit-build-core: ${SKBUILD_CORE_VERSION}")
+endif()
+list(POP_BACK CMAKE_MESSAGE_INDENT)
 
 # Enable python packages
 find_package(Python COMPONENTS
@@ -65,7 +73,6 @@ add_compile_definitions(CYTHON_NO_PYINIT_EXPORT=1)
 #: lib, perhaps we should change this
 set(CMAKE_SHARED_MODULE_PREFIX "")
 
-
 # Determine whether we are in CIBUILDWHEEL
 # and whether we are building for the universal target
 set(_def_fortran TRUE)
@@ -81,6 +88,8 @@ option(WITH_FORTRAN
 
 # Define all options for the user
 if( WITH_FORTRAN )
+  enable_language(Fortran)
+
   set(F2PY_REPORT_ON_ARRAY_COPY 10
     CACHE STRING
     "The minimum (element) size of arrays before warning about copies")
@@ -114,12 +123,14 @@ cmake_print_variables(CC)
 cmake_print_variables(CFLAGS)
 cmake_print_variables(CMAKE_C_COMPILER)
 cmake_print_variables(CMAKE_C_FLAGS)
+cmake_print_variables(CMAKE_C_STANDARD)
 set(CXX $ENV{CXX})
 set(CXXFLAGS $ENV{CXXFLAGS})
 cmake_print_variables(CXX)
 cmake_print_variables(CXXFLAGS)
 cmake_print_variables(CMAKE_CXX_COMPILER)
 cmake_print_variables(CMAKE_CXX_FLAGS)
+cmake_print_variables(CMAKE_CXX_STANDARD)
 if(WITH_FORTRAN)
   set(FC $ENV{FC})
   set(FFLAGS $ENV{FFLAGS})
@@ -127,6 +138,7 @@ if(WITH_FORTRAN)
   cmake_print_variables(FFLAGS)
   cmake_print_variables(CMAKE_Fortran_COMPILER)
   cmake_print_variables(CMAKE_Fortran_FLAGS)
+  cmake_print_variables(CMAKE_Fortran_STANDARD)
 endif()
 set(ARCHFLAGS $ENV{ARCHFLAGS})
 cmake_print_variables(ARCHFLAGS)
@@ -147,6 +159,7 @@ list(POP_BACK CMAKE_MESSAGE_INDENT)
 
 # Parse Cython global options
 if(WITH_COVERAGE)
+  add_compile_definitions(CYTHON_TRACE=1)
   add_compile_definitions(CYTHON_TRACE_NOGIL=1)
 endif()
 if(WITH_ANNOTATE)
@@ -209,6 +222,18 @@ if(WITH_FORTRAN)
 endif(WITH_FORTRAN)
 
 
+message(STATUS "Python variables:")
+list(APPEND CMAKE_MESSAGE_INDENT "  ")
+
+cmake_print_variables(Python_INCLUDE_DIRS)
+cmake_print_variables(Python_NumPy_INCLUDE_DIRS)
+if(WITH_FORTRAN)
+  cmake_print_variables(Python_NumPy_F2Py_INCLUDE_DIR)
+endif()
+
+list(POP_BACK CMAKE_MESSAGE_INDENT)
+
+
 message(STATUS "sisl options")
 list(APPEND CMAKE_MESSAGE_INDENT "  ")
 
@@ -225,18 +250,6 @@ if(WITH_FORTRAN)
     cmake_print_variables(F2PY_REPORT_ON_ARRAY_COPY)
   endif()
   cmake_print_variables(WITH_F2PY_REPORT_EXIT)
-endif()
-
-list(POP_BACK CMAKE_MESSAGE_INDENT)
-
-
-message(STATUS "Python variables:")
-list(APPEND CMAKE_MESSAGE_INDENT "  ")
-
-cmake_print_variables(Python_INCLUDE_DIRS)
-cmake_print_variables(Python_NumPy_INCLUDE_DIRS)
-if(WITH_FORTRAN)
-  cmake_print_variables(Python_NumPy_F2Py_INCLUDE_DIR)
 endif()
 
 list(POP_BACK CMAKE_MESSAGE_INDENT)

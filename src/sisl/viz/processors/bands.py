@@ -5,7 +5,8 @@
 # from __future__ import annotations
 
 import itertools
-from typing import List, Literal, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Literal, Optional, Union
 
 import numpy as np
 import xarray as xr
@@ -15,20 +16,21 @@ from ..plotters import plot_actions
 
 def filter_bands(
     bands_data: xr.Dataset,
-    Erange: Optional[Tuple[float, float]] = None,
+    Erange: Optional[tuple[float, float]] = None,
     E0: float = 0,
-    bands_range: Optional[Tuple[int, int]] = None,
+    bands_range: Optional[tuple[int, int]] = None,
     spin: Optional[int] = None,
 ) -> xr.Dataset:
     filtered_bands = bands_data.copy()
     # Shift the energies according to the reference energy, while keeping the
     # attributes (which contain the units, amongst other things)
     filtered_bands["E"] = bands_data.E - E0
-    continous_bands = filtered_bands.dropna("k", how="all")
 
     # Get the bands that matter for the plot
     if Erange is None:
         if bands_range is None:
+            continous_bands = filtered_bands.dropna("k", how="all", subset=["E"])
+
             # If neither E range or bands_range was provided, we will just plot the 15 bands below and above the fermi level
             CB = int(
                 continous_bands.E.where(continous_bands.E <= 0).argmax("band").max()
@@ -39,17 +41,17 @@ def filter_bands(
             ]
 
         filtered_bands = filtered_bands.sel(band=slice(*bands_range))
-        continous_bands = filtered_bands.dropna("k", how="all")
 
         # This is the new Erange
+        # continous_bands = filtered_bands.dropna("k", how="all", subset=["E"])
         # Erange = np.array([float(f'{val:.3f}') for val in [float(continous_bands.E.min() - 0.01), float(continous_bands.E.max() + 0.01)]])
     else:
         filtered_bands = filtered_bands.where(
             (filtered_bands <= Erange[1]) & (filtered_bands >= Erange[0])
-        ).dropna("band", how="all")
-        continous_bands = filtered_bands.dropna("k", how="all")
+        ).dropna("band", how="all", subset=["E"])
 
         # This is the new bands range
+        # continous_bands = filtered_bands.dropna("k", how="all", subset=["E"])
         # bands_range = [int(continous_bands['band'].min()), int(continous_bands['band'].max())]
 
     # Give the filtered bands the same attributes as the full bands
@@ -235,11 +237,11 @@ def sanitize_k(bands_data: xr.Dataset, k: Union[float, str]) -> Optional[float]:
 
 def get_gap_coords(
     bands_data: xr.Dataset,
-    bands: Tuple[int, int],
+    bands: tuple[int, int],
     from_k: Union[float, str],
     to_k: Optional[Union[float, str]] = None,
     spin: int = 0,
-) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+) -> tuple[tuple[float, float], tuple[float, float]]:
     """Calculates the coordinates of a gap given some k values.
 
     Parameters
@@ -303,27 +305,27 @@ def draw_gaps(
     direct_gaps_only: bool,
     custom_gaps: Sequence[dict],
     E_axis: Literal["x", "y"],
-) -> List[dict]:
+) -> list[dict]:
     """Returns the drawing actions to draw gaps.
 
     Parameters
     ------------
-    bands_data: xr.Dataset
+    bands_data :
         The dataset containing bands energy information.
-    gap: bool
+    gap :
         Whether to draw the minimum gap passed as gap_info or not.
-    gap_info: dict
+    gap_info :
         Dictionary containing the information of the minimum gap,
         as returned by `calculate_gap`.
-    gap_tol: float
+    gap_tol :
         Tolerance in k to consider that two gaps are the same.
-    gap_color: str or None
+    gap_color :
         Color of the line that draws the gap.
-    gap_marker: str or None
+    gap_marker :
         Marker specification of the limits of the gap.
-    direct_gaps_only: bool
+    direct_gaps_only :
         Whether to draw the minimum gap only if it is a direct gap.
-    custom_gaps: list of dict
+    custom_gaps :
         List of custom gaps to draw. Each dict can contain the keys:
         - "from": the k value where the gap starts.
         - "to": the k value where the gap ends. If not present, equal to "from".
@@ -332,7 +334,7 @@ def draw_gaps(
         are polarized, the gap will be drawn for both spin components.
         - "color": Color of the line that draws the gap. Optional.
         - "marker": Marker specification for the limits of the gap. Optional.
-    E_axis: Literal["x", "y"]
+    E_axis:
         Axis where the energy is plotted.
     """
     draw_actions = []
@@ -406,8 +408,8 @@ def draw_gaps(
 
 
 def draw_gap(
-    ks: Tuple[float, float],
-    Es: Tuple[float, float],
+    ks: tuple[float, float],
+    Es: tuple[float, float],
     color: Optional[str] = None,
     marker: dict = {},
     name: str = "Gap",

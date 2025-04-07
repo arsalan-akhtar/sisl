@@ -10,7 +10,7 @@ It does so by patching them accordingly
 """
 import sisl
 import sisl.io.siesta as siesta
-from sisl.io.sile import BaseSile, get_siles
+from sisl.io.sile import get_siles
 
 from ._plotables import register_data_source, register_plotable, register_sile_method
 from .data import *
@@ -60,7 +60,7 @@ register_data_source(
     BandsData,
     FatbandsPlot,
     "bands_data",
-    data_source_init_kwargs={"extra_vars": ("norm2",)},
+    data_source_defaults={"extra_vars": ("norm2",)},
 )
 register_data_source(
     EigenstateData, WavefunctionPlot, "eigenstate", default=[sisl.EigenstateElectron]

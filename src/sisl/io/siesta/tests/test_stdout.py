@@ -3,22 +3,19 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import os.path as osp
-import sys
-
 import numpy as np
 import pytest
+from pytest import approx
 
 import sisl
 from sisl.io.siesta.fdf import *
 from sisl.io.siesta.stdout import *
 
 pytestmark = [pytest.mark.io, pytest.mark.siesta]
-_dir = osp.join("sisl", "io", "siesta")
 
 
-def test_md_nose_out(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_out(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     out = stdoutSileSiesta(f)
 
     geom0 = out.read_geometry()
@@ -33,12 +30,17 @@ def test_md_nose_out(sisl_files):
     assert not np.allclose(geom0.xyz, geom.xyz)
     assert not np.allclose(geom0.xyz, geom1.xyz)
 
-    # try and read all outputs
-    # there are 5 outputs in this output file.
+    # try and read all outputs (including the final section)
+    nOutputs = 6
+    assert len(out.read_force[:](skip_final=False)) == nOutputs
+    assert len(out.read_stress[:](skip_final=False)) == nOutputs
+
+    # there are 5 dynamics outputs in this output file.
     nOutputs = 5
     assert len(out.read_geometry[:]()) == nOutputs
     assert len(out.read_force[:]()) == nOutputs
     assert len(out.read_stress[:]()) == nOutputs
+
     f0 = out.read_force()
     f = out.read_force[-1]()
     f1 = out.read_data(force=True, slice=-1)
@@ -68,8 +70,8 @@ def test_md_nose_out(sisl_files):
         assert not np.allclose(S, T)
 
 
-def test_md_nose_out_scf(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_out_scf(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     out = stdoutSileSiesta(f)
 
     # Ensure SCF reads are consistent
@@ -93,8 +95,8 @@ def test_md_nose_out_scf(sisl_files):
         assert np.allclose(scf_all[i], scf)
 
 
-def test_md_nose_out_data(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_out_data(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     out = stdoutSileSiesta(f)
 
     f0, g0 = out.read_data(force=True, geometry=True)
@@ -103,13 +105,13 @@ def test_md_nose_out_data(sisl_files):
     assert np.allclose(f0, f1)
     assert g0 == g1
     assert isinstance(e, sisl.utils.PropertyDict)
-    assert e.fermi == pytest.approx(-2.836423)
-    assert e.xc == pytest.approx(-704.656164)
-    assert e["kinetic"] == pytest.approx(2293.584862)
+    assert e.fermi == approx(-3.420926)
+    assert e.xc == approx(-1218.701737)
+    assert e["kinetic"] == approx(3955.286834)
 
 
-def test_md_nose_out_info(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_out_info(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     out = stdoutSileSiesta(f)
     assert out.info.completed
     assert out.info.spin.is_unpolarized
@@ -118,9 +120,9 @@ def test_md_nose_out_info(sisl_files):
     assert out.info.no == geom.no
 
 
-def test_md_nose_out_dataframe(sisl_files):
+def test_mgco3_md_out_dataframe(sisl_files):
     pytest.importorskip("pandas", reason="pandas not available")
-    f = sisl_files(_dir, "md_nose.out")
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     out = stdoutSileSiesta(f)
 
     data = out.read_scf[:]()
@@ -135,8 +137,8 @@ def test_md_nose_out_dataframe(sisl_files):
     assert df.index.names == ["iscf"]
 
 
-def test_md_nose_out_energy(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_out_energy(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
     energy = stdoutSileSiesta(f).read_energy()
     assert isinstance(energy, sisl.utils.PropertyDict)
     assert hasattr(energy, "basis")
@@ -144,33 +146,39 @@ def test_md_nose_out_energy(sisl_files):
     assert hasattr(basis, "enthalpy")
 
 
-def test_md_nose_pao_basis(sisl_files):
-    f = sisl_files(_dir, "md_nose.out")
+def test_mgco3_md_pao_basis(sisl_files):
+    f = sisl_files("siesta", "MgCO3_md", "RUN.out")
 
     block = """
-Mg                    1                    # Species label, number of l-shells
+Mg                    3                    # Species label, number of l-shells
+ n=2   0   1                         # n, l, Nzeta
+   2.346
+   1.000
  n=3   0   1                         # n, l, Nzeta
-   6.620
+   7.081
+   1.000
+ n=2   1   1                         # n, l, Nzeta
+   2.614
    1.000
 C                     2                    # Species label, number of l-shells
  n=2   0   1                         # n, l, Nzeta
-   4.192
+   4.511
    1.000
  n=2   1   1                         # n, l, Nzeta
-   4.870
+   5.490
    1.000
 O                     2                    # Species label, number of l-shells
  n=2   0   1                         # n, l, Nzeta
-   3.305
+   3.561
    1.000
  n=2   1   1                         # n, l, Nzeta
-   3.937
+   4.343
    1.000
     """
 
     atom_orbs = fdfSileSiesta._parse_pao_basis(block)
     assert len(atom_orbs) == 3
-    assert len(atom_orbs["Mg"]) == 1
+    assert len(atom_orbs["Mg"]) == 5
     assert len(atom_orbs["C"]) == 4
     assert len(atom_orbs["O"]) == 4
 

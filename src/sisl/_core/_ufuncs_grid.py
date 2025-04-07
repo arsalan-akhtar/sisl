@@ -3,14 +3,15 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-from typing import Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 import numpy as np
 
 import sisl._array as _a
 from sisl._ufuncs import register_sisl_dispatch
 from sisl.messages import SislError
-from sisl.typing import CellAxes, CellAxis, GridLike, SileLike
+from sisl.typing import CellAxis, GridLike, SileLike
 from sisl.utils import import_attr
 from sisl.utils.misc import direction
 
@@ -38,7 +39,7 @@ def copy(grid: Grid, dtype=None) -> Grid:
 def write(grid: Grid, sile: SileLike, *args, **kwargs) -> None:
     """Writes grid to the `sile` using `sile.write_grid`
 
-    parameters
+    Parameters
     ----------
     sile :
         a `Sile` object which will be used to write the grid
@@ -70,12 +71,12 @@ def apply(grid: Grid, function_, *args, **kwargs):
     some measurement). In that case, you will get the result instead of a `Grid`.
 
     Parameters
-    -----------
-    function_: str or function
+    ----------
+    function_ : str or function
         for a string the full module path to the function should be given.
         The function that will be called should have the grid as the first argument in its
         interface.
-    *args and **kwargs:
+    *args and **kwargs :
         arguments that go directly to the function call
 
     Notes

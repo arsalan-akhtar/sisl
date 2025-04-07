@@ -22,40 +22,12 @@ from sisl._indices import indices_fabs_le, indices_le
 from sisl._internal import set_module
 from sisl._math_small import xyz_to_spherical_cos_phi
 from sisl.messages import deprecate_argument, progressbar, warn
-from sisl.typing import AtomsIndex, GaugeType, SeqFloat
+from sisl.typing import AtomsIndex, GaugeType, KPoint, SeqFloat
 
-from .sparse import SparseOrbitalBZSpin
+from .sparse import SparseOrbitalBZSpin, _get_spin
 from .spin import Spin
 
 __all__ = ["DensityMatrix"]
-
-
-def _get_density(DM, orthogonal, what="sum"):
-    DM = DM.T
-    if orthogonal:
-        off = 0
-    else:
-        off = 1
-    if what == "sum":
-        if DM.shape[0] in (2 + off, 4 + off, 8 + off):
-            return DM[0] + DM[1]
-        return DM[0]
-    if what == "spin":
-        m = np.empty([3, DM.shape[1]], dtype=DM.dtype)
-        if DM.shape[0] == 8 + off:
-            m[0] = DM[2] + DM[6]
-            m[1] = -DM[3] + DM[7]
-            m[2] = DM[0] - DM[1]
-        elif DM.shape[0] == 4 + off:
-            m[0] = 2 * DM[2]
-            m[1] = -2 * DM[3]
-            m[2] = DM[0] - DM[1]
-        elif DM.shape[0] == 2 + off:
-            m[:2, :] = 0.0
-            m[2] = DM[0] - DM[1]
-        elif DM.shape[0] == 1 + off:
-            m[...] = 0.0
-        return m
 
 
 class _densitymatrix(SparseOrbitalBZSpin):
@@ -75,7 +47,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
         ----------
         angles : (3,)
            angle to rotate spin boxes around the Cartesian directions
-           :math:`x`, :math:`y` and :math:`z`, respectively
+           :math:`x`, :math:`y` and :math:`z`, respectively (Euler angles).
         rad : bool, optional
            Determines the unit of `angles`, for true it is in radians
 
@@ -92,23 +64,44 @@ class _densitymatrix(SparseOrbitalBZSpin):
         if not rad:
             angles = angles / 180 * np.pi
 
+        # Helper routines
         def cos_sin(a):
             return m.cos(a), m.sin(a)
 
-        calpha, salpha = cos_sin(angles[0])
-        cbeta, sbeta = cos_sin(angles[1])
-        cgamma, sgamma = cos_sin(angles[2])
-        del cos_sin
+        def close(a, v):
+            return abs(abs(a) - v) < np.pi / 1080
+
+        c, s = zip(*list(map(cos_sin, angles)))
 
         # define rotation matrix
-        R = (
-            # Rz
-            np.array([[cgamma, -sgamma, 0], [sgamma, cgamma, 0], [0, 0, 1]])
-            # Ry
-            .dot([[cbeta, 0, sbeta], [0, 1, 0], [-sbeta, 0, cbeta]])
-            # Rx
-            .dot([[1, 0, 0], [0, calpha, -salpha], [0, salpha, calpha]])
-        )
+        if len(angles) == 3:
+            calpha, cbeta, cgamma = c
+            salpha, sbeta, sgamma = s
+            R = (
+                # Rz
+                np.array([[cgamma, -sgamma, 0], [sgamma, cgamma, 0], [0, 0, 1]])
+                # Ry
+                .dot([[cbeta, 0, sbeta], [0, 1, 0], [-sbeta, 0, cbeta]])
+                # Rx
+                .dot([[1, 0, 0], [0, calpha, -salpha], [0, salpha, calpha]])
+            )
+
+            # if the spin is not rotated around y, then no rotation has happened
+            # x just puts the correct place, and z rotation is a no-op.
+            is_pol_noop = (
+                close(angles[0], 0)
+                and close(angles[1], 0)
+                or (close(angles[0], np.pi) and close(angles[1], np.pi))
+            )
+
+            is_pol_flip = (close(angles[0], np.pi) and close(angles[1], 0)) or (
+                close(angles[0], 0) and close(angles[1], np.pi)
+            )
+
+        else:
+            raise ValueError(
+                f"{self.__class__.__name__}.spin_rotate got wrong number of angles (expected 3, got {len(angles)}"
+            )
 
         if self.spin.is_noncolinear:
             A = np.empty([len(self._csr._D), 3], dtype=self.dtype)
@@ -166,19 +159,17 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
         elif self.spin.is_polarized:
 
-            def close(a, v):
-                return abs(abs(a) - v) < np.pi / 1080
-
             # figure out if this is only rotating 180 for x or y
-            if (close(angles[0], np.pi) and close(angles[1], 0)) or (
-                close(angles[0], 0) and close(angles[1], np.pi)
-            ):
+            if is_pol_noop:
+                out = self.copy()
+
+            elif is_pol_flip:
                 # flip spin
                 out = self.copy()
                 out._csr._D[:, [0, 1]] = out._csr._D[:, [1, 0]]
 
             else:
-                spin = Spin("nc", dtype=self.dtype)
+                spin = Spin("nc")
                 out = self.__class__(
                     self.geometry,
                     dtype=self.dtype,
@@ -314,7 +305,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
         elif self.spin.is_polarized:
             if vec[:2] @ vec[:2] > 1e-6:
-                spin = Spin("nc", dtype=self.dtype)
+                spin = Spin("nc")
                 out = self.__class__(
                     self.geometry,
                     dtype=self.dtype,
@@ -348,10 +339,10 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
         return out
 
-    def mulliken(self, projection="orbital"):
+    def mulliken(self, projection: Literal["orbital", "atom"] = "orbital"):
         r""" Calculate Mulliken charges from the density matrix
 
-        See `math_convention`_ for details on the mathematical notation.
+        See :ref:`here <math_convention>` for details on the mathematical notation.
         Matrices :math:`\boldsymbol\rho` and :math:`\mathbf S` are density
         and overlap matrices, respectively.
 
@@ -381,7 +372,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
         Parameters
         ----------
-        projection : {'orbital', 'atom'}
+        projection :
             how the Mulliken charges are returned.
             Can be atom-resolved, orbital-resolved or the
             charge matrix (off-diagonal elements)
@@ -455,7 +446,9 @@ class _densitymatrix(SparseOrbitalBZSpin):
             f"{self.__class__.__name__}.mulliken only allows projection [orbital, atom]"
         )
 
-    def bond_order(self, method: str = "mayer", projection: str = "atom"):
+    def bond_order(
+        self, method: str = "mayer", projection: Literal["atom", "orbital"] = "atom"
+    ):
         r"""Bond-order calculation using various methods
 
         For ``method='wiberg'``, the bond-order is calculated as:
@@ -500,7 +493,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
         method : {mayer, wiberg, mulliken}[:spin]
             which method to calculate the bond-order with
 
-        projection : {atom, orbital}
+        projection :
             whether the returned matrix is in orbital form, or in atom form.
             If orbital is used, then the above formulas will be changed
 
@@ -518,10 +511,10 @@ class _densitymatrix(SparseOrbitalBZSpin):
         m, *opts = method.split(":")
 
         # only extract the summed density
-        what = "sum"
+        what = "trace"
         if "spin" in opts:
             # do this for each spin x, y, z
-            what = "spin"
+            what = "vector"
             del opts[opts.index("spin")]
 
         # Check that there are no un-used options
@@ -535,7 +528,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
         rows, cols, DM = _to_coo(self._csr)
 
         # Convert to requested matrix form
-        D = _get_density(DM, self.orthogonal, what)
+        D = _get_spin(DM, self.spin, what).T
 
         # Define a matrix-matrix multiplication
         def mm(A, B):
@@ -723,21 +716,21 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
         Parameters
         ----------
-        grid : Grid
+        grid :
            the grid on which to add the density (the density is in ``e/Ang^3``)
         spinor : (2,) or (2, 2), optional
            the spinor matrix to obtain the diagonal components of the density. For un-polarized density matrices
            this keyword has no influence. For spin-polarized it *has* to be either 1 integer or a vector of
            length 2 (defaults to total density).
            For non-collinear/spin-orbit density matrices it has to be a 2x2 matrix (defaults to total density).
-        atol : float, optional
+        atol :
            DM tolerance for accepted values. For all density matrix elements with absolute values below
            the tolerance, they will be treated as strictly zeros.
-        eta : bool, optional
+        eta :
            show a progressbar on stdout
         method:
            It determines if the orbital values are computed on the fly (direct) or they are all pre-computed
-           on the grid at the beginning(pre-compute).
+           on the grid at the beginning (pre-compute).
            Pre computing orbitals results in a faster computation, but it requires more memory.
 
         Notes
@@ -749,6 +742,16 @@ class _densitymatrix(SparseOrbitalBZSpin):
         # the unit cell, since this will facilitate things greatly and it gives the
         # same result.
         uc_dm = self.translate2uc()
+
+        if method == "pre-compute":
+            # Compute orbital values on the grid
+            psi_values = uc_dm.geometry._orbital_values(grid.shape)
+
+            # Here we just set the nsc to whatever the psi values have.
+            # If the nsc is bigger in the DM, then some elements of the DM will be discarded.
+            # If the nsc is smaller in the DM, then the DM is just "padded" with 0s.
+            if not np.all(uc_dm.nsc == psi_values.geometry.nsc):
+                uc_dm.set_nsc(psi_values.geometry.nsc)
 
         # Get the DM components with which we want to compute the density
         csr = uc_dm._csr
@@ -765,7 +768,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
             DM = _a.emptyz([self.nnz, 2, 2])
             idx = _a.array_arange(csr.ptr[:-1], n=csr.ncol)
-            if self.spin.kind == Spin.NONCOLINEAR:
+            if self.spin.is_noncolinear:
                 # non-collinear
                 DM[:, 0, 0] = csr._D[idx, 0]
                 DM[:, 0, 1] = csr._D[idx, 2] + 1j * csr._D[idx, 3]
@@ -784,7 +787,7 @@ class _densitymatrix(SparseOrbitalBZSpin):
             # Create the DM csr matrix.
             csrDM = csr_matrix(
                 (DM, csr.col[idx], _ncol_to_indptr(csr.ncol)),
-                shape=(self.shape[:2]),
+                shape=(uc_dm.shape[:2]),
                 dtype=DM.dtype,
             )
 
@@ -810,14 +813,13 @@ class _densitymatrix(SparseOrbitalBZSpin):
 
             csrDM = csr.tocsr(dim=0) * spinor[0] + csr.tocsr(dim=1) * spinor[1]
 
+        elif self.spin.is_nambu:
+            raise NotImplementedError("Nambu spin configuration not implemneted")
         else:
             csrDM = csr.tocsr(dim=0)
 
         if method == "pre-compute":
             try:
-                # Compute orbital values on the grid
-                psi_values = uc_dm.geometry._orbital_values(grid.shape)
-
                 psi_values.reduce_orbital_products(
                     csrDM, uc_dm.lattice, out=grid.grid, **kwargs
                 )
@@ -1247,7 +1249,11 @@ class DensityMatrix(_densitymatrix):
         self._def_dim = self.UP
         return self
 
-    def orbital_momentum(self, projection="orbital", method="onsite"):
+    def orbital_momentum(
+        self,
+        projection: Literal["orbital", "atom"] = "orbital",
+        method: Literal["onsite"] = "onsite",
+    ):
         r"""Calculate orbital angular momentum on either atoms or orbitals
 
         Currently this implementation equals the Siesta implementation in that
@@ -1264,9 +1270,9 @@ class DensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        projection : {'orbital', 'atom'}
+        projection :
             whether the angular momentum is resolved per atom, or per orbital
-        method : {'onsite'}
+        method :
             method used to calculate the angular momentum
 
         Returns
@@ -1275,9 +1281,9 @@ class DensityMatrix(_densitymatrix):
             orbital angular momentum with the last dimension equalling the :math:`L_x`, :math:`L_y` and :math:`L_z` components
         """
         # Check that the spin configuration is correct
-        if not self.spin.is_spinorbit:
+        if not (self.spin.is_spinorbit or self.spin.is_nambu):
             raise ValueError(
-                f"{self.__class__.__name__}.orbital_momentum requires a spin-orbit matrix"
+                f"{self.__class__.__name__}.orbital_momentum requires minimum a spin-orbit matrix"
             )
 
         # First we calculate
@@ -1475,9 +1481,9 @@ class DensityMatrix(_densitymatrix):
 
     def Dk(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -1496,7 +1502,7 @@ class DensityMatrix(_densitymatrix):
 
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \mathbf D(\mathbf k) = \mathbf D_{ij} e^{i \mathbf k\cdot\mathb r}
@@ -1505,14 +1511,14 @@ class DensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,
@@ -1539,9 +1545,9 @@ class DensityMatrix(_densitymatrix):
 
     def dDk(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -1561,7 +1567,7 @@ class DensityMatrix(_densitymatrix):
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
         And :math:`\alpha` is one of the Cartesian directions.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \nabla_k \mathbf D_\alpha(\mathbf k) = i \mathbf r_\alpha \mathbf D_{ij} e^{i \mathbf k\cdot\mathbf r}
@@ -1570,14 +1576,14 @@ class DensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,
@@ -1602,9 +1608,9 @@ class DensityMatrix(_densitymatrix):
 
     def ddDk(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -1624,7 +1630,7 @@ class DensityMatrix(_densitymatrix):
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
         And :math:`\alpha` and :math:`\beta` are one of the Cartesian directions.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \nabla_k^2 \mathbf D^{(\alpha\beta)}(\mathbf k) = - \mathbf r^{(i)} \mathbf r^{\beta} \mathbf D_{ij} e^{i\mathbf k\cdot\mathbf r}
@@ -1633,14 +1639,14 @@ class DensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,

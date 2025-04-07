@@ -3,18 +3,15 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 
 import sisl._array as _a
-from sisl import SislError
 from sisl.messages import warn
 
 __all__ = ["_siesta_sc_off"]
 __all__ += ["_csr_from_siesta", "_csr_from_sc_off"]
 __all__ += ["_csr_to_siesta", "_csr_to_sc_off"]
-__all__ += ["_mat_spin_convert", "_fc_correct"]
+__all__ += ["_mat_sisl2siesta", "_mat_siesta2sisl", "_fc_correct"]
 
 
 def _siesta_sc_off(nsc):
@@ -101,45 +98,70 @@ def _csr_from(col_from, csr):
     csr.translate_columns(col_from, col_to)
 
 
-def _mat_spin_convert(M, spin=None):
+def _mat_siesta2sisl(M) -> None:
     """Conversion of Siesta spin matrices to sisl spin matrices
 
-    The matrices from Siesta are given in a format adheering to the following
-    concept:
+    The matrices from Siesta are given in a format adhering to the following
+    concept.
 
-    A non-colinear calculation has the following entries (in C-index) for
-    the sparse matrix:
+    There are two cases:
 
-    H[:, [0, 1, 2, 3]]
-    H11 == H[:, 0]
-    H22 == H[:, 1]
-    H12 == H[:, 2] - 1j H[:, 3] # spin-box Hermitian
-    H21 == H[:, 2] + 1j H[:, 3]
+    1. A non-collinear calculation:
 
-    Although it really does not make sense to change anything, we
-    do change it to adhere to the spin-orbit case (see below).
-    I.e. what Siesta *saves* is the -Im[H12], which we now store
-    as Im[H12].
+       Siesta uses this convention:
 
+            H[:, [0, 1, 2, 3]]
+            H11 == H[:, 0]
+            H22 == H[:, 1]
+            H12 == H[:, 2] - 1j H[:, 3] # spin-box Hermitian
+            H21 == H[:, 2] + 1j H[:, 3]
 
-    A spin-orbit calculation has the following entries (in C-index) for
-    the sparse matrix:
+       In sisl we use this convention, see `Hamiltonian`:
 
-    H[:, [0, 1, 2, 3, 4, 5, 6, 7]]
-    H11 == H[:, 0] + 1j H[:, 4]
-    H22 == H[:, 1] + 1j H[:, 5]
-    H12 == H[:, 2] + 1j H[:, 3] # spin-box Hermitian
-    H21 == H[:, 6] + 1j H[:, 7]
+            H11 == H[:, 0]
+            H22 == H[:, 1]
+            H12 == H[:, 2] + 1j H[:, 3] # spin-box Hermitian
+            H21 == H[:, 2] - 1j H[:, 3]
+
+    2. A spin-orbit calculation + Nambu:
+
+       Siesta uses this convention:
+
+            H[:, [0, 1, 2, 3, 4, 5, 6, 7]]
+            H11 == H[:, 0] + 1j H[:, 4]
+            H22 == H[:, 1] + 1j H[:, 5]
+            H12 == H[:, 2] - 1j H[:, 3]
+            H21 == H[:, 6] + 1j H[:, 7]
+
+       In sisl we use this convention, see `Hamiltonian`:
+
+            H[:, [0, 1, 2, 3, 4, 5, 6, 7]]
+            H11 == H[:, 0] + 1j H[:, 4]
+            H22 == H[:, 1] + 1j H[:, 5]
+            H12 == H[:, 2] + 1j H[:, 3]
+            H21 == H[:, 6] + 1j H[:, 7]
+
+    On top of this it depends on whether the data-type is complex
+    or not.
     """
-    if spin is None:
-        if M.spin.is_noncolinear:
+    spin = M.spin
+
+    if spin.kind in (spin.NONCOLINEAR, spin.SPINORBIT, spin.NAMBU):
+        if np.dtype(M.dtype).kind in ("f", "i"):
             M._csr._D[:, 3] = -M._csr._D[:, 3]
-        elif M.spin.is_spinorbit:
+        else:
+            M._csr._D[:, 2] = M._csr._D[:, 2].conj()
+
+
+def _mat_sisl2siesta(M) -> None:
+    """Conversion of sisl to Siesta spin matrices"""
+    spin = M.spin
+
+    if spin.kind in (spin.NONCOLINEAR, spin.SPINORBIT, spin.NAMBU):
+        if np.dtype(M.dtype).kind in ("f", "i"):
             M._csr._D[:, 3] = -M._csr._D[:, 3]
-    elif spin.is_noncolinear:
-        M._D[:, 3] = -M._D[:, 3]
-    elif spin.is_spinorbit:
-        M._D[:, 3] = -M._D[:, 3]
+        else:
+            M._csr._D[:, 2] = M._csr._D[:, 2].conj()
 
 
 def _geom2hsx(geometry):

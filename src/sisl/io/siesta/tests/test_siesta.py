@@ -3,8 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import os.path as osp
-
 import numpy as np
 import pytest
 
@@ -20,13 +18,12 @@ from sisl import (
 from sisl.io.siesta import *
 
 pytestmark = [pytest.mark.io, pytest.mark.siesta]
-_dir = osp.join("sisl", "io", "siesta")
 
 netCDF4 = pytest.importorskip("netCDF4")
 
 
 def test_nc1(sisl_tmp, sisl_system):
-    f = sisl_tmp("gr.nc", _dir)
+    f = sisl_tmp("gr.nc")
     tb = Hamiltonian(sisl_system.gtb)
     tb.construct([sisl_system.R, sisl_system.t])
     with ncSileSiesta(f, "w") as s:
@@ -44,7 +41,7 @@ def test_nc1(sisl_tmp, sisl_system):
 
 
 def test_nc2(sisl_tmp, sisl_system):
-    f = sisl_tmp("grS.nc", _dir)
+    f = sisl_tmp("grS.nc")
     tb = Hamiltonian(sisl_system.gtb, orthogonal=False)
     tb.construct([sisl_system.R, sisl_system.tS])
     with ncSileSiesta(f, "w") as s:
@@ -64,7 +61,7 @@ def test_nc2(sisl_tmp, sisl_system):
 def test_nc_multiple_fail(sisl_tmp, sisl_system):
     # writing two different sparse matrices to the same
     # file will fail
-    f = sisl_tmp("gr.nc", _dir)
+    f = sisl_tmp("gr.nc")
     H = Hamiltonian(sisl_system.gtb)
     DM = DensityMatrix(sisl_system.gtb)
 
@@ -83,7 +80,7 @@ def test_nc_multiple_fail(sisl_tmp, sisl_system):
     [True, False],
 )
 def test_nc_multiple_checks(sisl_tmp, sisl_system, sort):
-    f = sisl_tmp("gr.nc", _dir)
+    f = sisl_tmp("gr.nc")
     H = Hamiltonian(sisl_system.gtb)
     DM = DensityMatrix(sisl_system.gtb)
 
@@ -103,7 +100,7 @@ def test_nc_multiple_checks(sisl_tmp, sisl_system, sort):
 
 
 def test_nc_overlap(sisl_tmp, sisl_system):
-    f = sisl_tmp("gr.nc", _dir)
+    f = sisl_tmp("gr.nc")
     tb = Hamiltonian(sisl_system.gtb)
     tb.construct([sisl_system.R, sisl_system.t])
     tb.write(ncSileSiesta(f, "w"))
@@ -115,7 +112,7 @@ def test_nc_overlap(sisl_tmp, sisl_system):
     assert np.allclose(S._csr._D.sum(), tb.no)
 
     # Write test
-    f = sisl_tmp("s.nc", _dir)
+    f = sisl_tmp("s.nc")
     with ncSileSiesta(f, "w") as sile:
         S.write(sile)
     with ncSileSiesta(f) as sile:
@@ -125,7 +122,7 @@ def test_nc_overlap(sisl_tmp, sisl_system):
 
 
 def test_nc_dynamical_matrix(sisl_tmp, sisl_system):
-    f = sisl_tmp("grdyn.nc", _dir)
+    f = sisl_tmp("grdyn.nc")
     dm = DynamicalMatrix(sisl_system.gtb)
     for _, ix in dm.iter_orbitals():
         dm[ix, ix] = ix / 2.0
@@ -145,7 +142,7 @@ def test_nc_dynamical_matrix(sisl_tmp, sisl_system):
 
 
 def test_nc_density_matrix(sisl_tmp, sisl_system):
-    f = sisl_tmp("grDM.nc", _dir)
+    f = sisl_tmp("grDM.nc")
     dm = DensityMatrix(sisl_system.gtb)
     for _, ix in dm.iter_orbitals():
         dm[ix, ix] = ix / 2.0
@@ -164,99 +161,6 @@ def test_nc_density_matrix(sisl_tmp, sisl_system):
     assert sisl_system.g.atoms.equal(ndm.atoms, R=False)
 
 
-def test_nc_H_non_colinear(sisl_tmp):
-    H1 = Hamiltonian(sisl.geom.graphene(), spin=sisl.Spin("NC"))
-    H1.construct(([0.1, 1.44], [[0.1, 0.2, 0.3, 0.4], [0.2, 0.3, 0.4, 0.5]]))
-
-    f1 = sisl_tmp("H1.nc", _dir)
-    f2 = sisl_tmp("H2.nc", _dir)
-    H1.write(f1)
-    H1.finalize()
-    with sisl.get_sile(f1) as sile:
-        H2 = sile.read_hamiltonian()
-    H2.write(f2)
-    with sisl.get_sile(f2) as sile:
-        H3 = sile.read_hamiltonian()
-    assert H1._csr.spsame(H2._csr)
-    assert np.allclose(H1._csr._D, H2._csr._D)
-    assert H1._csr.spsame(H3._csr)
-    assert np.allclose(H1._csr._D, H3._csr._D)
-
-
-def test_nc_DM_non_colinear(sisl_tmp):
-    DM1 = DensityMatrix(sisl.geom.graphene(), spin=sisl.Spin("NC"))
-    DM1.construct(([0.1, 1.44], [[0.1, 0.2, 0.3, 0.4], [0.2, 0.3, 0.4, 0.5]]))
-
-    f1 = sisl_tmp("DM1.nc", _dir)
-    f2 = sisl_tmp("DM2.nc", _dir)
-    DM1.write(f1)
-    DM1.finalize()
-    with sisl.get_sile(f1) as sile:
-        DM2 = sile.read_density_matrix()
-    DM2.write(f2)
-    with sisl.get_sile(f2) as sile:
-        DM3 = sile.read_density_matrix()
-    assert DM1._csr.spsame(DM2._csr)
-    assert DM1._csr.spsame(DM3._csr)
-    # DM1 is finalized, but DM2 is not finalized
-    assert np.allclose(DM1._csr._D, DM2._csr._D)
-    # DM2 and DM3 are the same
-    assert np.allclose(DM2._csr._D, DM3._csr._D)
-    DM2.finalize()
-    assert np.allclose(DM1._csr._D, DM2._csr._D)
-
-
-def test_nc_EDM_non_colinear(sisl_tmp):
-    EDM1 = EnergyDensityMatrix(sisl.geom.graphene(), spin=sisl.Spin("NC"))
-    EDM1.construct(([0.1, 1.44], [[0.1, 0.2, 0.3, 0.4], [0.2, 0.3, 0.4, 0.5]]))
-
-    f1 = sisl_tmp("EDM1.nc", _dir)
-    f2 = sisl_tmp("EDM2.nc", _dir)
-    EDM1.write(f1, sort=False)
-    EDM1.finalize()
-    with sisl.get_sile(f1) as sile:
-        EDM2 = sile.read_energy_density_matrix(sort=False)
-    EDM2.write(f2, sort=False)
-    with sisl.get_sile(f2) as sile:
-        EDM3 = sile.read_energy_density_matrix(sort=False)
-    assert EDM1._csr.spsame(EDM2._csr)
-    assert EDM1._csr.spsame(EDM3._csr)
-    # EDM1 is finalized, but EDM2 is not finalized
-    assert not np.allclose(EDM1._csr._D, EDM2._csr._D)
-    # EDM2 and EDM3 are the same
-    assert np.allclose(EDM2._csr._D, EDM3._csr._D)
-    EDM2.finalize()
-    assert np.allclose(EDM1._csr._D, EDM2._csr._D)
-
-
-@pytest.mark.filterwarnings("ignore", message="*is NOT Hermitian for on-site")
-def test_nc_H_spin_orbit(sisl_tmp):
-    H1 = Hamiltonian(sisl.geom.graphene(), spin=sisl.Spin("SO"))
-    H1.construct(
-        (
-            [0.1, 1.44],
-            [
-                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-                [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-            ],
-        )
-    )
-
-    f1 = sisl_tmp("H1.nc", _dir)
-    f2 = sisl_tmp("H2.nc", _dir)
-    H1.write(f1)
-    H1.finalize()
-    with sisl.get_sile(f1) as sile:
-        H2 = sile.read_hamiltonian()
-    H2.write(f2)
-    with sisl.get_sile(f2) as sile:
-        H3 = sile.read_hamiltonian()
-    assert H1._csr.spsame(H2._csr)
-    assert np.allclose(H1._csr._D, H2._csr._D)
-    assert H1._csr.spsame(H3._csr)
-    assert np.allclose(H1._csr._D, H3._csr._D)
-
-
 @pytest.mark.filterwarnings("ignore", message="*is NOT Hermitian for on-site")
 def test_nc_H_spin_orbit_nc2tshs2nc(sisl_tmp):
     H1 = Hamiltonian(sisl.geom.graphene(), spin=sisl.Spin("SO"))
@@ -270,8 +174,8 @@ def test_nc_H_spin_orbit_nc2tshs2nc(sisl_tmp):
         )
     )
 
-    f1 = sisl_tmp("H1.nc", _dir)
-    f2 = sisl_tmp("H2.TSHS", _dir)
+    f1 = sisl_tmp("H1.nc")
+    f2 = sisl_tmp("H2.TSHS")
     H1.write(f1)
     H1.finalize()
     with sisl.get_sile(f1) as sile:
@@ -283,34 +187,6 @@ def test_nc_H_spin_orbit_nc2tshs2nc(sisl_tmp):
     assert np.allclose(H1._csr._D, H2._csr._D)
     assert H1._csr.spsame(H3._csr)
     assert np.allclose(H1._csr._D, H3._csr._D)
-
-
-@pytest.mark.filterwarnings("ignore", message="*is NOT Hermitian for on-site")
-def test_nc_DM_spin_orbit(sisl_tmp):
-    DM1 = DensityMatrix(sisl.geom.graphene(), spin=sisl.Spin("SO"))
-    DM1.construct(
-        (
-            [0.1, 1.44],
-            [
-                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-                [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-            ],
-        )
-    )
-
-    f1 = sisl_tmp("DM1.nc", _dir)
-    f2 = sisl_tmp("DM2.nc", _dir)
-    DM1.write(f1)
-    DM1.finalize()
-    with sisl.get_sile(f1) as sile:
-        DM2 = sile.read_density_matrix()
-    DM2.write(f2)
-    with sisl.get_sile(f2) as sile:
-        DM3 = sile.read_density_matrix()
-    assert DM1._csr.spsame(DM2._csr)
-    assert np.allclose(DM1._csr._D, DM2._csr._D)
-    assert DM1._csr.spsame(DM3._csr)
-    assert np.allclose(DM1._csr._D, DM3._csr._D)
 
 
 @pytest.mark.filterwarnings("ignore", message="*is NOT Hermitian for on-site")
@@ -326,8 +202,8 @@ def test_nc_DM_spin_orbit_nc2dm2nc(sisl_tmp):
         )
     )
 
-    f1 = sisl_tmp("DM1.nc", _dir)
-    f2 = sisl_tmp("DM2.DM", _dir)
+    f1 = sisl_tmp("DM1.nc")
+    f2 = sisl_tmp("DM2.DM")
     DM1.finalize()
     DM1.write(f1)
     with sisl.get_sile(f1) as sile:
@@ -342,7 +218,7 @@ def test_nc_DM_spin_orbit_nc2dm2nc(sisl_tmp):
 
 
 def test_nc_ghost(sisl_tmp):
-    f = sisl_tmp("ghost.nc", _dir)
+    f = sisl_tmp("ghost.nc")
     a1 = Atom(1)
     am1 = Atom(-1)
     g = Geometry([[0.0, 0.0, i] for i in range(2)], [a1, am1], 2.0)

@@ -10,7 +10,9 @@ import numpy as np
 
 # To speed up the _extend algorithm we limit lookups
 from numpy import all as np_all
-from numpy import allclose
+from numpy import (
+    allclose,
+)
 from numpy import any as np_any
 from numpy import (
     arange,
@@ -50,6 +52,7 @@ from sisl._help import array_fill_repeat, isiterable
 from sisl._indices import indices, indices_only
 from sisl._internal import set_module
 from sisl.messages import SislError, warn
+from sisl.typing import OrSequence, SparseMatrix
 from sisl.utils.mathematics import intersect_and_diff_sets
 
 from ._sparse import sparse_dense
@@ -303,29 +306,43 @@ column indices of the sparse elements
         self._D = zeros([nnz, K], dtype)
 
     @classmethod
-    def sparsity_union(cls, *spmats, dtype=None, dim=None, value=0):
-        """Create a SparseCSR with constant fill value in all places that `spmats` have nonzeros
+    def sparsity_union(
+        cls,
+        sparse_matrices: OrSequence[SparseMatrix],
+        dtype=None,
+        dim: Optional[int] = None,
+        value: float = 0,
+    ) -> Self:
+        """Create a `SparseCSR` with constant fill value in all places that `sparse_matrices` have nonzeros
 
         By default the returned matrix will be sorted.
 
         Parameters
         ----------
-        spmats : SparseCSR or csr_matrix
+        sparse_matrices :
             SparseCSRs to find the sparsity pattern union of.
         dtype : dtype, optional
             Output dtype. If not given, use the result dtype of the spmats.
-        dim : int, optional
+        dim :
             If given, the returned SparseCSR will have this as dim.
-            By default the first given spmat decides the dimension.
-        value : scalar, default 0
+            By default the first sparse matrix in `sparse_matrices` determines
+            the resulting 3rd dimension.
+        value :
             The used fill value.
         """
+        if issparse(sparse_matrices) or isinstance(sparse_matrices, SparseCSR):
+            sparse_matrices = [sparse_matrices]
+
+        # short-hand
+        spmats = sparse_matrices
+
         shape2 = spmats[0].shape[:2]
         if not all(shape2 == m.shape[:2] for m in spmats):
             raise ValueError(
-                f"Cannot find sparsity union of differently shaped csrs: "
-                + " & ".join(str(m.shape) for m in spmats)
+                f"Cannot find sparsity union of differently shaped sparse matrices: "
+                " & ".join(str(m.shape) for m in spmats)
             )
+
         if dim is not None:
             shape = shape2 + (dim,)
         elif len(spmats[0].shape) == 3:
@@ -355,7 +372,7 @@ column indices of the sparse elements
         # Put into the output
         out.ncol = _a.arrayi([len(cols) for cols in out_col])
         out.ptr = _ncol_to_indptr(out.ncol)
-        out.col = concatenate(out_col)
+        out.col = concatenate(out_col).astype(np.int32, copy=False)
         out._nnz = len(out.col)
         out._D = full([out._nnz, out.dim], value, dtype=dtype)
         return out
@@ -404,7 +421,7 @@ column indices of the sparse elements
         shape[2] = dim
         shape = tuple(shape)
 
-        offsets = array_fill_repeat(offsets, shape[0], cls=dtype)
+        offsets = array_fill_repeat(offsets, shape[0], cls=np.int32)
 
         # Create the index-pointer, data and values
         data = array_fill_repeat(diagonals, shape[0], axis=0, cls=dtype)
@@ -425,7 +442,7 @@ column indices of the sparse elements
 
         return D
 
-    def empty(self, keep_nnz=False):
+    def empty(self, keep_nnz: bool = False) -> None:
         """Delete all sparse information from the sparsity pattern
 
         Essentially this deletes all entries.
@@ -450,17 +467,17 @@ column indices of the sparse elements
             # they may be obscure data any-way.
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, int, int]:
         """The shape of the sparse matrix"""
         return self._shape
 
     @property
-    def dim(self):
+    def dim(self) -> int:
         """The extra dimensionality of the sparse matrix (elements per matrix element)"""
         return self.shape[2]
 
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         """Data contained in the sparse matrix (numpy array of elements)"""
         return self._D
 
@@ -475,20 +492,20 @@ column indices of the sparse elements
         return np.dtype(self._D.dtype).kind
 
     @property
-    def nnz(self):
+    def nnz(self) -> int:
         """Number of non-zero elements in the sparse matrix"""
         return self._nnz
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Number of rows in the sparse matrix"""
         return self.shape[0]
 
     @property
-    def finalized(self):
+    def finalized(self) -> bool:
         """Whether the contained data is finalized and non-used elements have been removed"""
         return self._finalized
 
-    def finalize(self, sort=True):
+    def finalize(self, sort: bool = True) -> None:
         """Finalizes the sparse matrix by removing all non-set elements
 
         One may still interact with the sparse matrix as one would previously.
@@ -630,14 +647,14 @@ column indices of the sparse elements
             return setdiff1d(edges, exclude, assume_unique=True)
         return edges
 
-    def delete_columns(self, columns, keep_shape=False):
+    def delete_columns(self, columns, keep_shape: bool = False):
         """Delete all columns in `columns` (in-place action)
 
         Parameters
         ----------
         columns : int or array_like
            columns to delete from the sparse pattern
-        keep_shape : bool, optional
+        keep_shape :
            whether the ``shape`` of the object should be retained, if ``True`` all higher
            columns will be shifted according to the number of columns deleted below,
            if ``False``, only the elements will be deleted.
@@ -748,7 +765,7 @@ column indices of the sparse elements
         # We are *only* deleting columns, so if it is finalized,
         # it will still be
 
-    def translate_columns(self, old, new, rows=None, clean=True):
+    def translate_columns(self, old, new, rows=None, clean: bool = True):
         """Takes all `old` columns and translates them to `new`.
 
         Parameters
@@ -759,7 +776,7 @@ column indices of the sparse elements
            new column indices
         rows : int or array_like
            only translate columns for the given rows
-        clean : bool, optional
+        clean :
            whether the new translated columns, outside the shape, should be deleted or not (default delete)
         """
         old = self._sanitize(old, axis=1)
@@ -843,7 +860,7 @@ column indices of the sparse elements
         """Return a dense `numpy.ndarray` which has 3 dimensions (self.shape)"""
         return sparse_dense(self)
 
-    def spsame(self, other):
+    def spsame(self, other) -> bool:
         """Check whether two sparse matrices have the same non-zero elements
 
         Parameters
@@ -1443,7 +1460,7 @@ column indices of the sparse elements
             return cols
         return rows, cols
 
-    def eliminate_zeros(self, atol: float = 0.0):
+    def eliminate_zeros(self, atol: float = 0.0) -> None:
         """Remove all zero elememts from the sparse matrix
 
         This is an *in-place* operation
@@ -1526,12 +1543,12 @@ column indices of the sparse elements
 
         return new
 
-    def tocsr(self, dim=0, **kwargs):
+    def tocsr(self, dim: int = 0, **kwargs) -> csr_matrix:
         """Convert dimension `dim` into a :class:`~scipy.sparse.csr_matrix` format
 
         Parameters
         ----------
-        dim : int, optional
+        dim :
            dimension of the data returned in a scipy sparse matrix format
         **kwargs:
            arguments passed to the :class:`~scipy.sparse.csr_matrix` routine
@@ -1609,51 +1626,126 @@ column indices of the sparse elements
 
         return new
 
+    def astype(self, dtype, copy: bool = True) -> Self:
+        """Convert the stored data-type to something else
+
+        Parameters
+        ----------
+        dtype :
+            the new dtype for the sparse matrix
+        copy :
+            copy when needed, or do not copy when not needed.
+        """
+        old_dtype = np.dtype(self.dtype)
+        new_dtype = np.dtype(dtype)
+
+        if old_dtype == new_dtype:
+            if copy:
+                return self.copy()
+            return self
+
+        new = self.copy()
+        new._D = new._D.astype(dtype, copy=copy)
+        return new
+
     @classmethod
-    def fromsp(cls, *sps, dtype=None):
+    def fromsp(cls, sparse_matrices: OrSequence[SparseMatrix], dtype=None):
         """Combine multiple single-dimension sparse matrices into one SparseCSR matrix
 
         The different sparse matrices need not have the same sparsity pattern.
 
         Parameters
         ----------
-        *sps : sparse-matrix
+        sparse_matrices :
             any sparse matrix which can convert to a `scipy.sparse.csr_matrix` matrix
         dtype : numpy.dtype, optional
             data-type to store in the matrix, default to largest ``dtype`` for the
             passed sparse matrices
         """
-        if dtype is None:
-            dtype = np.result_type(*[sp.dtype for sp in sps])
+        if issparse(sparse_matrices) or isinstance(sparse_matrices, SparseCSR):
+            sparse_matrices = list(sparse_matrices)
 
-        if len(sps) == 1:
-            m = sps[0].tocsr()
+        # short-hand
+        spmats = sparse_matrices
+
+        if dtype is None:
+            dtype = np.result_type(*[sp.dtype for sp in spmats])
+
+        # Number of dimensions
+        def get_3rddim(spmat):
+            if isinstance(spmat, SparseCSR):
+                return spmat.shape[2]
+            return 1
+
+        dim = sum(map(get_3rddim, spmats))
+
+        if len(spmats) == 1:
+            spmat = spmats[0]
+            if isinstance(spmat, SparseCSR):
+                return spmat.copy(dtype=dtype)
+
+            # We are dealing with something different from a SparseCSR
+            # Likely some scipy.sparse matrix.
+            # Use that one.
+            m = spmat.tocsr()
             out = cls(m.shape + (1,), nnzpr=1, nnz=1, dtype=dtype)
-            out.col = m.indices.copy()
-            out.ptr = m.indptr.copy()
+            out.col = m.indices.astype(np.int32, copy=True)
+            out.ptr = m.indptr.astype(np.int32, copy=True)
             out.ncol = np.diff(out.ptr)
             out._nnz = len(out.col)
             out._D = m.data.reshape(-1, 1).astype(dtype, copy=True)
             return out
 
         # Pre-allocate by finding sparsity pattern union
-        out = cls.sparsity_union(*sps, dim=len(sps), dtype=dtype)
+        out = cls.sparsity_union(spmats, dim=dim, dtype=dtype)
+
+        # For all non-sisl objects, finalize it by sorting
+        # indices, that should be really fast!
+        def finalize(spmat):
+            if isinstance(spmat, SparseCSR):
+                return spmat
+
+            spmat = spmat.tocsr()
+            spmat.sort_indices()
+            return spmat
+
+        spmats = list(map(finalize, spmats))
 
         # Now transfer the data
-        for im, m in enumerate(sps):
-            m = m.tocsr()
-            m.sort_indices()
-            for r in range(out.shape[0]):
-                msl = slice(m.indptr[r], m.indptr[r + 1])
-                osl = slice(out.ptr[r], out.ptr[r] + out.ncol[r])
-                oidx = indices(
-                    out.col[osl], m.indices[msl], osl.start, both_sorted=True
-                )
-                out._D[oidx, im] = m.data[msl]
+        for r in range(out.shape[0]):
+            # loop across all rows of the sparse matrix
+            osl = slice(out.ptr[r], out.ptr[r] + out.ncol[r])
+            ocol = out.col[osl]
+            if len(ocol) == 0:
+                continue
+
+            im = 0
+            for m in spmats:
+                sorted = True
+                dims = 1
+                if isinstance(m, SparseCSR):
+                    sorted = m.finalized
+                    dims = m.shape[2]
+
+                    msl = slice(m.ptr[r], m.ptr[r] + m.ncol[r])
+                    mcol = m.col[msl]
+                    D = m._D
+                else:
+                    msl = slice(m.indptr[r], m.indptr[r + 1])
+                    mcol = m.indices[msl]
+                    D = m.data.reshape(-1, 1)
+
+                out_idx = indices(ocol, mcol, osl.start, both_sorted=sorted)
+
+                if len(out_idx) > 0:
+                    out._D[out_idx, im : im + dims] = D[msl, :]
+
+                # step the dimensions we write to
+                im += dims
 
         return out
 
-    def remove(self, indices):
+    def remove(self, indices) -> Self:
         """Return a new sparse CSR matrix with all the indices removed
 
         Parameters
@@ -1672,7 +1764,7 @@ column indices of the sparse elements
 
         return self.sub(rindices)
 
-    def sub(self, indices):
+    def sub(self, indices) -> Self:
         """Create a new sparse CSR matrix with the data only for the given rows and columns
 
         All rows and columns in `indices` are retained, everything else is removed.
@@ -1759,7 +1851,7 @@ column indices of the sparse elements
 
         return csr
 
-    def transpose(self, sort=True):
+    def transpose(self, sort: bool = True):
         """Create the transposed sparse matrix
 
         Parameters
@@ -1835,7 +1927,7 @@ column indices of the sparse elements
 
         return T
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Representation of the sparse matrix model"""
         ints = self.shape[:] + (self.nnz,)
         return (
@@ -1845,7 +1937,7 @@ column indices of the sparse elements
             )
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{self.__module__}.{self.__class__.__name__} shape={self.shape}, kind={self.dkind}, nnz={self.nnz}>"
 
     # numpy dispatch methods
@@ -2008,9 +2100,9 @@ def _ufunc_ndarray_sp(ufunc, a, b, **kwargs):
 def _ufunc_sp_sp(ufunc, a, b, **kwargs):
     """Calculate ufunc on sparse matrices"""
     if isinstance(a, tuple):
-        a = SparseCSR.fromsp(*a)
+        a = SparseCSR.fromsp(a)
     if isinstance(b, tuple):
-        b = SparseCSR.fromsp(*b)
+        b = SparseCSR.fromsp(b)
 
     def accessors(mat):
         if isinstance(mat, SparseCSR):
@@ -2059,7 +2151,7 @@ def _ufunc_sp_sp(ufunc, a, b, **kwargs):
     if dtype is None:
         out = ufunc(adata[:1, :], bdata[:1, :], **kwargs)
         dtype = out.dtype
-    out = SparseCSR.sparsity_union(a, b, dim=max(adim, bdim), dtype=dtype)
+    out = SparseCSR.sparsity_union([a, b], dim=max(adim, bdim), dtype=dtype)
 
     for r in range(out.shape[0]):
         offset = out.ptr[r]

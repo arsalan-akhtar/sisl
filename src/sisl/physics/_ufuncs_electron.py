@@ -3,16 +3,16 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 
-import sisl._array as _a
 from sisl._ufuncs import register_sisl_dispatch
-from sisl.typing import SeqOrScalarFloat, npt
+from sisl.typing import DistributionType
 
 from .distribution import get_distribution
-from .electron import StateCElectron, _create_sigma, _TDist, _velocity_const
+from .electron import StateCElectron, _create_sigma, _velocity_const
 from .state import _dM_Operator
 
 # Nothing gets exposed here
@@ -43,7 +43,7 @@ def velocity(state: StateCElectron, *args, **kwargs):
 
     Parameters
     ----------
-    *args, **kwargs:
+    *args, **kwargs :
         arguments passed directly to `derivative`, see that method
         for argument details.
 
@@ -61,9 +61,9 @@ def berry_curvature(
     state: StateCElectron,
     sum: bool = True,
     *,
-    distribution: Optional[_TDist] = None,
+    distribution: Optional[DistributionType] = None,
     derivative_kwargs: dict = {},
-    operator: Union[_dM_Operator, Tuple[_dM_Operator, _dM_Operator]] = lambda M, d: M,
+    operator: Union[_dM_Operator, tuple[_dM_Operator, _dM_Operator]] = lambda M, d: M,
     eta: float = 0.0,
 ) -> np.ndarray:
     r"""Calculate the Berry curvature matrix for a set of states (Kubo)
@@ -85,7 +85,7 @@ def berry_curvature(
     by the spin current operator. see `spin_berry_curvature` for details.
 
     For additional details on the spin Berry curvature, see Eq. (1) in
-    :cite:`PhysRevB.98.21402` and Eq. (2) in :cite:`Ji2022`.
+    :cite:`PhysRevB.98.214402` and Eq. (2) in :cite:`Ji2022`.
 
     Notes
     -----
@@ -97,21 +97,21 @@ def berry_curvature(
     state :
         the state describing the electronic states we wish to calculate the Berry curvature
         of.
-    sum:
+    sum :
         only return the summed Berry curvature (over all states).
-    distribution:
+    distribution :
         An optional distribution enabling one to automatically sum states
         across occupied/unoccupied states. This is useful when calculating AHC/SHC
         contributions since it can improve numerical accuracy.
         If this is None, it will do the above equation exactly.
-    derivative_kwargs:
+    derivative_kwargs :
         arguments passed to `derivative`. Since `operator` is defined here,
         one cannot have `operator` in `derivative_kwargs`.
-    operator:
+    operator :
         the operator to use for changing the `dPk` matrices.
         Note, that this may change the resulting units, and it will be up
         to the user to adapt the units accordingly.
-    eta:
+    eta :
         direct imaginary part broadening of the Lorentzian.
 
     See Also
@@ -123,7 +123,7 @@ def berry_curvature(
 
     Returns
     -------
-    bc: numpy.ndarray
+    bc :
         If `sum` is False, it will be at least a 3D array with the 3rd dimension
         having the contribution from state `i`.
         If one passes `axes` to the `derivative_kwargs` argument one will get
@@ -248,7 +248,7 @@ def spin_berry_curvature(
     sigma: Union[CartesianAxisStrLiteral, npt.ArrayLike] = "z",
     sum: bool = True,
     *,
-    distribution: Optional[_TDist] = None,
+    distribution: Optional[DistributionType] = None,
     J_axes: Union[CartesianAxisStrLiteral, Sequence[CartesianAxisStrLiteral]] = "xyz",
     **berry_kwargs,
 ) -> np.ndarray:
@@ -299,13 +299,13 @@ def spin_berry_curvature(
 
     Parameters
     ----------
-    sigma:
+    sigma :
         which Pauli matrix is used, alternatively one can pass a custom spin matrix,
         or the full sigma.
-    J_axes:
+    J_axes :
         the direction(s) where the :math:`J^\sigma` operator will be applied, defaults
         to all.
-    **kwargs:
+    **kwargs :
         see `berry_curvature` for the remaining arguments.
 
     See Also
@@ -317,7 +317,7 @@ def spin_berry_curvature(
 
     Returns
     -------
-    bc: numpy.ndarray
+    bc :
         Spin Berry curvature + (possibly Berry curvature) returned in certain dimensions.
         If one passes `axes` to the `derivative_kwargs` argument one will get
         dimensions according to the number of axes requested, by default all
@@ -341,7 +341,11 @@ def spin_berry_curvature(
     dtype = np.result_type(state.dtype, state.info.get("dtype", np.complex128))
 
     # no is not including the spin-dimension
-    m = _create_sigma(H.no, sigma, dtype, state.info.get("format", "csr"))
+    if H.spin.is_nambu:
+        no = H.no * 2
+    else:
+        no = H.no
+    m = _create_sigma(no, sigma, dtype, state.info.get("format", "csr"))
 
     def J(M, d):
         nonlocal m, J_axes

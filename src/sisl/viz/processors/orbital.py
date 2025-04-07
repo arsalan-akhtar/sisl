@@ -5,9 +5,10 @@
 # from __future__ import annotations
 
 from collections import ChainMap, defaultdict
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, TypedDict, Union
+from typing import Any, Literal, Optional, TypedDict, Union
 
 import numpy as np
 import xarray
@@ -48,7 +49,7 @@ class OrbitalQueriesManager:
     geometry: Geometry
     spin: Spin
 
-    key_gens: Dict[str, Callable] = {}
+    key_gens: dict[str, Callable] = {}
 
     @singledispatchmethod
     @classmethod
@@ -56,7 +57,7 @@ class OrbitalQueriesManager:
         cls,
         geometry: Geometry,
         spin: Union[str, Spin] = "",
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         return cls(geometry=geometry, spin=spin or "", key_gens=key_gens)
 
@@ -66,7 +67,7 @@ class OrbitalQueriesManager:
         cls,
         geometry: Geometry,
         spin: Union[str, Spin] = "",
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         return cls(geometry=geometry, spin=spin or "", key_gens=key_gens)
 
@@ -76,7 +77,7 @@ class OrbitalQueriesManager:
         cls,
         string: str,
         spin: Union[str, Spin] = "",
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         """Initializes an OrbitalQueriesManager from a string, assuming it is a path."""
         return cls.new(Path(string), spin=spin, key_gens=key_gens)
@@ -84,7 +85,7 @@ class OrbitalQueriesManager:
     @new.register
     @classmethod
     def from_path(
-        cls, path: Path, spin: Union[str, Spin] = "", key_gens: Dict[str, Callable] = {}
+        cls, path: Path, spin: Union[str, Spin] = "", key_gens: dict[str, Callable] = {}
     ):
         """Initializes an OrbitalQueriesManager from a path, converting it to a sile."""
         return cls.new(sisl.get_sile(path), spin=spin, key_gens=key_gens)
@@ -95,7 +96,7 @@ class OrbitalQueriesManager:
         cls,
         sile: sisl.io.BaseSile,
         spin: Union[str, Spin] = "",
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         """Initializes an OrbitalQueriesManager from a sile."""
         return cls.new(sile.read_geometry(), spin=spin, key_gens=key_gens)
@@ -106,7 +107,7 @@ class OrbitalQueriesManager:
         cls,
         array: xarray.core.common.AttrAccessMixin,
         spin: Optional[Union[str, Spin]] = None,
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         """Initializes an OrbitalQueriesManager from an xarray object."""
         if spin is None:
@@ -120,7 +121,7 @@ class OrbitalQueriesManager:
         cls,
         data: Data,
         spin: Optional[Union[str, Spin]] = None,
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         """Initializes an OrbitalQueriesManager from a sisl Data object."""
         return cls.new(data._data, spin=spin, key_gens=key_gens)
@@ -129,7 +130,7 @@ class OrbitalQueriesManager:
         self,
         geometry: Optional[Geometry] = None,
         spin: Union[str, Spin] = "",
-        key_gens: Dict[str, Callable] = {},
+        key_gens: dict[str, Callable] = {},
     ):
         self.geometry = geometry
         self.spin = Spin(spin)
@@ -558,7 +559,7 @@ def reduce_orbital_data(
     groups: Sequence[OrbitalGroup],
     geometry: Optional[Geometry] = None,
     reduce_func: Callable = np.mean,
-    spin_reduce: Optional[Callable] = None,
+    spin_reduce: Union[None, Callable, Literal[False]] = None,
     orb_dim: str = "orb",
     spin_dim: str = "spin",
     groups_dim: str = "group",
@@ -593,6 +594,8 @@ def reduce_orbital_data(
         in its "reduce_func" field, which will take preference.
     spin_reduce: Callable, optional
         The function that will compute the reduction along the spin dimension once the selection is done.
+
+        If False, the spin dimension will not be reduced.
     orb_dim: str, optional
         Name of the dimension that contains the orbital indices in `orbital_data`.
     spin_dim: str, optional
@@ -636,6 +639,50 @@ def reduce_orbital_data(
 
     data_spin = orbital_data.attrs.get("spin", Spin(""))
 
+    # Determine whether the spin dimension should be reduced.
+    should_reduce_spin = (
+        (spin_reduce is not None or data_spin.is_polarized)
+        and (spin_reduce is not False)
+        and (spin_dim in orbital_data.dims)
+    )
+
+    original_spin_coord = None
+    if (
+        data_spin.is_polarized
+        and spin_dim in orbital_data.coords
+        and spin_reduce is not False
+    ):
+        if not isinstance(orbital_data, (DataArray, Dataset)):
+            orbital_data = orbital_data._data
+
+        original_spin_coord = orbital_data.coords[spin_dim].values
+
+        if "total" in orbital_data.coords["spin"]:
+            spin_up = (
+                (orbital_data.sel(spin="total") - orbital_data.sel(spin="z")) / 2
+            ).assign_coords(spin=0)
+            spin_down = (
+                (orbital_data.sel(spin="total") + orbital_data.sel(spin="z")) / 2
+            ).assign_coords(spin=1)
+
+            orbital_data = xarray.concat([orbital_data, spin_up, spin_down], "spin")
+        else:
+            total = orbital_data.sum(spin_dim).assign_coords(spin="total")
+            z = (orbital_data.sel(spin=0) - orbital_data.sel(spin=1)).assign_coords(
+                spin="z"
+            )
+
+            orbital_data = xarray.concat([total, z, orbital_data], "spin")
+
+    # If a reduction for spin was requested, then pass the two different functions to reduce
+    # each coordinate.
+    reduce_funcs = reduce_func
+    reduce_dims = orb_dim
+
+    if should_reduce_spin:
+        reduce_funcs = (reduce_func, spin_reduce)
+        reduce_dims = (orb_dim, spin_dim)
+
     def _sanitize_group(group):
         group = group.copy()
         group = sanitize_group(group)
@@ -674,40 +721,6 @@ def reduce_orbital_data(
 
         return group
 
-    original_spin_coord = None
-    if data_spin.is_polarized and spin_dim in orbital_data.coords:
-        if not isinstance(orbital_data, (DataArray, Dataset)):
-            orbital_data = orbital_data._data
-
-        original_spin_coord = orbital_data.coords[spin_dim].values
-
-        if "total" in orbital_data.coords["spin"]:
-            spin_up = (
-                (orbital_data.sel(spin="total") - orbital_data.sel(spin="z")) / 2
-            ).assign_coords(spin=0)
-            spin_down = (
-                (orbital_data.sel(spin="total") + orbital_data.sel(spin="z")) / 2
-            ).assign_coords(spin=1)
-
-            orbital_data = xarray.concat([orbital_data, spin_up, spin_down], "spin")
-        else:
-            total = orbital_data.sum(spin_dim).assign_coords(spin="total")
-            z = (orbital_data.sel(spin=0) - orbital_data.sel(spin=1)).assign_coords(
-                spin="z"
-            )
-
-            orbital_data = xarray.concat([total, z, orbital_data], "spin")
-
-    # If a reduction for spin was requested, then pass the two different functions to reduce
-    # each coordinate.
-    reduce_funcs = reduce_func
-    reduce_dims = orb_dim
-    if (
-        spin_reduce is not None or data_spin.is_polarized
-    ) and spin_dim in orbital_data.dims:
-        reduce_funcs = (reduce_func, spin_reduce)
-        reduce_dims = (orb_dim, spin_dim)
-
     return group_reduce(
         data=orbital_data,
         groups=groups,
@@ -722,7 +735,7 @@ def reduce_orbital_data(
 
 
 def get_orbital_queries_manager(
-    obj, spin: Optional[str] = None, key_gens: Dict[str, Callable] = {}
+    obj, spin: Optional[str] = None, key_gens: dict[str, Callable] = {}
 ) -> OrbitalQueriesManager:
     return OrbitalQueriesManager.new(obj, spin=spin, key_gens=key_gens)
 
@@ -775,7 +788,7 @@ def split_orbitals(
 def atom_data_from_orbital_data(
     orbital_data,
     atoms: AtomsIndex = None,
-    request_kwargs: Dict = {},
+    request_kwargs: dict = {},
     geometry: Optional[Geometry] = None,
     reduce_func: Callable = np.mean,
     spin_reduce: Optional[Callable] = None,

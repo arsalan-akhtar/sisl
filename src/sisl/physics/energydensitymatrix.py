@@ -8,7 +8,7 @@ import numpy as np
 import sisl._array as _a
 from sisl._internal import set_module
 from sisl.messages import SislError
-from sisl.typing import GaugeType
+from sisl.typing import GaugeType, KPoint
 
 from .densitymatrix import _densitymatrix
 
@@ -103,9 +103,9 @@ class EnergyDensityMatrix(_densitymatrix):
 
     def Ek(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -117,14 +117,14 @@ class EnergyDensityMatrix(_densitymatrix):
         Notes
         -----
 
-        Currently the implemented gauge for the k-point is the cell vector gauge:
+        Currently the implemented gauge for the k-point is the lattice vector gauge:
 
         .. math::
            \mathbf E(\mathbf k) = \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf R}
 
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \mathbf E(\mathbf k) = \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf r}
@@ -133,14 +133,14 @@ class EnergyDensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the energy density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,
@@ -167,9 +167,9 @@ class EnergyDensityMatrix(_densitymatrix):
 
     def dEk(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -181,7 +181,7 @@ class EnergyDensityMatrix(_densitymatrix):
         Notes
         -----
 
-        Currently the implemented gauge for the k-point is the cell vector gauge:
+        Currently the implemented gauge for the k-point is the lattice vector gauge:
 
         .. math::
            \nabla_{\mathbf k} \mathbf E_\alpha(\mathbf k) = i\mathbf R_\alpha \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf R}
@@ -189,7 +189,7 @@ class EnergyDensityMatrix(_densitymatrix):
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
         And :math:`\alpha` is one of the Cartesian directions.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \nabla_{\mathbf k} \mathbf E_\alpha(\mathbf k) = i\mathbf r_\alpha \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf r}
@@ -198,14 +198,14 @@ class EnergyDensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the energy density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,
@@ -230,9 +230,9 @@ class EnergyDensityMatrix(_densitymatrix):
 
     def ddEk(
         self,
-        k=(0, 0, 0),
+        k: KPoint = (0, 0, 0),
         dtype=None,
-        gauge: GaugeType = "cell",
+        gauge: GaugeType = "lattice",
         format="csr",
         *args,
         **kwargs,
@@ -244,7 +244,7 @@ class EnergyDensityMatrix(_densitymatrix):
         Notes
         -----
 
-        Currently the implemented gauge for the k-point is the cell vector gauge:
+        Currently the implemented gauge for the k-point is the lattice vector gauge:
 
         .. math::
            \nabla_{\mathbf k^2} \mathbf E_{\alpha\beta}(\mathbf k) = -\mathbf R_\alpha\mathbf R_\beta \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf R}
@@ -252,7 +252,7 @@ class EnergyDensityMatrix(_densitymatrix):
         where :math:`\mathbf R` is an integer times the cell vector and :math:`i`, :math:`j` are orbital indices.
         And :math:`\alpha` and :math:`\beta` are one of the Cartesian directions.
 
-        Another possible gauge is the orbital distance which can be written as
+        Another possible gauge is the atomic distance which can be written as
 
         .. math::
            \nabla_{\mathbf k^2} \mathbf E_{\alpha\beta}(\mathbf k) = -\mathbf r_\alpha\mathbf r_\beta \mathbf E_{ij} e^{i\mathbf k\cdot\mathbf r}
@@ -261,14 +261,14 @@ class EnergyDensityMatrix(_densitymatrix):
 
         Parameters
         ----------
-        k : array_like
+        k :
            the k-point to setup the energy density matrix at
         dtype : numpy.dtype , optional
            the data type of the returned matrix. Do NOT request non-complex
            data-type for non-Gamma k.
            The default data-type is `numpy.complex128`
-        gauge : {'cell', 'orbital'}
-           the chosen gauge, `cell` for cell vector gauge, and `orbital` for orbital distance
+        gauge :
+           the chosen gauge, ``lattice`` for cell vector gauge, and ``atomic`` for atomic distance
            gauge.
         format : {'csr', 'array', 'dense', 'coo', ...}
            the returned format of the matrix, defaulting to the `scipy.sparse.csr_matrix`,
@@ -326,7 +326,7 @@ class EnergyDensityMatrix(_densitymatrix):
             return
 
         for i in range(self.spin.spinor):
-            self._csr._D[:, i] += DM._csr._D[:, i] * E[i]
+            self._csr._D[:, i].real += DM._csr._D[:, i].real * E[i]
 
     @staticmethod
     def read(sile, *args, **kwargs):

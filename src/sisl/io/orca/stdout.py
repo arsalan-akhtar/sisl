@@ -3,6 +3,8 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
+from typing import Literal, Optional, Union
+
 import numpy as np
 
 from sisl._internal import set_module
@@ -18,42 +20,44 @@ from .sile import SileORCA
 __all__ = ["outputSileORCA", "stdoutSileORCA"]
 
 
-_A = SileORCA.InfoAttr
-
-
 @set_module("sisl.io.orca")
 class stdoutSileORCA(SileORCA):
     """Output file from ORCA"""
 
     _info_attributes_ = [
-        _A(
-            "na",
-            r".*Number of atoms",
-            lambda attr, match: int(match.string.split()[-1]),
+        dict(
+            name="na",
+            searcher=r".*Number of atoms",
+            parser=lambda attr, instance, match: int(match.string.split()[-1]),
             not_found="error",
         ),
-        _A(
-            "no",
-            r".*Number of basis functions",
-            lambda attr, match: int(match.string.split()[-1]),
+        dict(
+            name="no",
+            searcher=r".*Number of basis functions",
+            parser=lambda attr, instance, match: int(match.string.split()[-1]),
             not_found="error",
         ),
-        _A(
-            "vdw_correction",
-            r".*DFT DISPERSION CORRECTION",
-            lambda attr, match: True,
+        dict(
+            name="vdw_correction",
+            searcher=r".*DFT DISPERSION CORRECTION",
+            parser=lambda attr, instance, match: True,
             default=False,
             not_found="ignore",
         ),
-        _A(
-            "completed",
-            r".*ORCA TERMINATED NORMALLY",
-            lambda attr, match: True,
+        dict(
+            name="completed",
+            searcher=r".*ORCA TERMINATED NORMALLY",
+            parser=lambda attr, instance, match: True,
             default=False,
             not_found="warn",
         ),
     ]
 
+    @deprecation(
+        "stdoutSileORCA.completed is deprecated in favor of stdoutSileORCA.info.completed",
+        "0.15",
+        "0.16",
+    )
     def completed(self):
         """True if the full file has been read and "ORCA TERMINATED NORMALLY" was found."""
         return self.info.completed
@@ -80,7 +84,7 @@ class stdoutSileORCA(SileORCA):
 
     @SileBinder(postprocess=np.array)
     @sile_fh_open()
-    def read_electrons(self):
+    def read_electrons(self) -> Optional[tuple[float, float]]:
         """Read number of electrons (alpha, beta)
 
         Returns
@@ -100,25 +104,25 @@ class stdoutSileORCA(SileORCA):
     @sile_fh_open()
     def read_charge(
         self,
-        name="mulliken",
-        projection="orbital",
+        name: Literal["mulliken", "loewdin"] = "mulliken",
+        projection: Literal["orbital", "atom"] = "orbital",
         orbitals=None,
-        reduced=True,
-        spin=False,
-    ):
+        reduced: bool = True,
+        spin: bool = False,
+    ) -> Union[PropertyDict, np.ndarray]:
         """Reads from charge (or spin) population analysis
 
         Parameters
         ----------
-        name : {'mulliken', 'loewdin'}
+        name :
             name of the charge scheme to be read
-        projection : {'orbital', 'atom'}
+        projection :
             whether to get orbital- or atom-resolved quantities
         orbitals : str, optional
             allows to extract the atom-resolved orbitals matching this keyword
-        reduced : bool, optional
+        reduced :
             whether to search for full or reduced orbital projections
-        spin : bool, optional
+        spin :
             whether to return the spin block instead of charge
 
         Returns
@@ -271,7 +275,7 @@ class stdoutSileORCA(SileORCA):
 
     @SileBinder()
     @sile_fh_open()
-    def read_energy(self, units: UnitsVar = "eV"):
+    def read_energy(self, units: UnitsVar = "eV") -> Optional[PropertyDict]:
         """Reads the energy blocks
 
         Parameters
@@ -324,7 +328,7 @@ class stdoutSileORCA(SileORCA):
 
     @SileBinder()
     @sile_fh_open()
-    def read_orbital_energies(self, units: UnitsVar = "eV"):
+    def read_orbital_energies(self, units: UnitsVar = "eV") -> Optional[np.ndarray]:
         """Reads the "ORBITAL ENERGIES" blocks
 
         Parameters

@@ -3,9 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import math as m
-import warnings
-
 import numpy as np
 import pytest
 from scipy.sparse import SparseEfficiencyWarning
@@ -21,7 +18,6 @@ from sisl import (
     RealSpaceSE,
     RealSpaceSI,
     RecursiveSI,
-    SelfEnergy,
     SemiInfinite,
     WideBandSE,
 )
@@ -191,14 +187,13 @@ def test_sancho_green(setup):
 
 def test_wideband_1(setup):
     SE = WideBandSE(10, 1e-2)
-    assert SE.self_energy().shape == (10, 10)
-    assert np.allclose(np.diag(SE.self_energy()), -1j * 1e-2)
-    assert np.allclose(np.diag(SE.self_energy(eta=1)), -1j * 1.0)
-    assert np.allclose(np.diag(SE.broadening_matrix(eta=1)), 2.0)
+    se = SE.self_energy()
+    assert se.shape == (10, 10)
+    assert np.allclose(np.diag(se), -1j * np.pi * 1e-2)
+    assert np.allclose(np.diag(SE.self_energy(1j)), -1j * np.pi * 1.0)
+    assert np.allclose(np.diag(SE.broadening_matrix(1j)), np.pi * 2.0)
     # ensure our custom function works!
-    assert np.allclose(
-        SE.broadening_matrix(eta=1), SE.se2broadening(SE.self_energy(eta=1))
-    )
+    assert np.allclose(SE.broadening_matrix(1j), SE.se2broadening(SE.self_energy(1j)))
 
 
 @pytest.mark.parametrize("k_axes", [0, 1])
@@ -254,7 +249,8 @@ def test_real_space_H_3d():
 
 
 @pytest.mark.xfail(
-    reason="dtype for numpy>=2 seems to fail for complex64, to be cleaned"
+    int(np.__version__.split(".")[0]) >= 2,
+    reason="some numpy2 bug means it will not honor dtype=complex64",
 )
 def test_real_space_H_dtype(setup):
     RSE = RealSpaceSE(setup.H, 0, 1, (2, 2, 1), dk=100)
@@ -429,7 +425,7 @@ def test_real_space_SI_H_test(setup):
     RSI = RealSpaceSI(semi, surf, 0, (3, 1, 3))
     RSI.set_options(dk=100, trs=False, bz=None)
     RSI.setup()
-    RSI.green(0.1, [0, 0, 0.1], dtype=np.complex128)
+    RSI.green(0.1, [0, 0, 0.1])
     RSI.self_energy(0.1, [0, 0, 0.1])
     RSI.clear()
 
@@ -441,7 +437,7 @@ def test_real_space_SI_H_k_trs(setup):
     RSI = RealSpaceSI(semi, surf, 0, (3, 1, 3))
     RSI.setup(dk=100, trs=True, bz=None)
     with pytest.raises(ValueError):
-        RSI.green(0.1, [0, 0, 0.1], dtype=np.complex128)
+        RSI.green(0.1, [0, 0, 0.1])
 
 
 def test_real_space_SI_fail_semi_in_k(setup):

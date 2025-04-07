@@ -20,6 +20,7 @@ from sisl._dispatch_class import _Dispatchs
 from sisl._dispatcher import AbstractDispatch, ClassDispatcher, TypeDispatcher
 from sisl._help import dtype_complex_to_real, wrap_filterwarnings
 from sisl._internal import set_module
+from sisl._lib._argparse import SislHelpFormatter
 from sisl.messages import deprecate_argument, deprecation
 from sisl.shape import Shape
 from sisl.utils import (
@@ -1709,7 +1710,7 @@ def sgrid(grid=None, argv=None, ret_grid=False):
     import sys
     from pathlib import Path
 
-    from sisl.io import BaseSile, get_sile
+    from sisl.io import BaseSile
 
     # The file *MUST* be the first argument
     # (except --help|-h)
@@ -1747,7 +1748,7 @@ This may be unexpected but enables one to do advanced manipulations.
 
     p = argparse.ArgumentParser(
         exe,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=SislHelpFormatter,
         description=description,
     )
 
@@ -1757,7 +1758,6 @@ This may be unexpected but enables one to do advanced manipulations.
     # First read the input "Sile"
     stdout_grid = True
     if grid is None:
-        from os.path import isfile
 
         argv, input_file = cmd.collect_input(argv)
 

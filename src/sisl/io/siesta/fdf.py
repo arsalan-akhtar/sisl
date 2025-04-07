@@ -27,6 +27,7 @@ from sisl import (
     SphericalOrbital,
     constant,
 )
+from sisl._help import has_module
 from sisl._indices import indices_only
 from sisl._internal import set_module
 from sisl.messages import SislError, deprecate_argument, deprecation, info, warn
@@ -39,9 +40,9 @@ from sisl.utils.ranges import list2str
 
 from .._help import *
 from ..sile import (
+    MissingFermiLevelWarning,
     SileCDF,
     SileError,
-    _import_netCDF4,
     add_sile,
     get_sile_class,
     sile_fh_open,
@@ -79,9 +80,7 @@ _log = logging.getLogger(__name__)
 
 def _order_remove_netcdf(order):
     """Removes the order elements that refer to siles based on NetCDF"""
-    try:
-        _import_netCDF4()
-    except SileError:
+    if not has_module("netCDF4"):
         # We got an import error
         def accept(suffix):
             try:
@@ -151,16 +150,17 @@ class fdfSileSiesta(SileSiesta):
         # Public key for printing information about where stuff comes from
         self.track = kwargs.get("track", False)
 
-    def _pushfile(self, f):
-        if self.dir_file(f).is_file():
+    def _pushfile(self, f) -> None:
+        # We currently don't allow spaces/newlines/tabs at either end of the file name
+        if (f1 := self.dir_file(f)).is_file():
             self._parent_fh.append(self.fh)
-            self.fh = self.dir_file(f).open(self._mode)
-        elif self.dir_file(f"{f}.gz").is_file():
+            self.fh = f1.open(self._mode)
+        elif (f2 := self.dir_file(f"{f}.gz")).is_file():
             self._parent_fh.append(self.fh)
-            self.fh = gzip.open(self.dir_file(f"{f}.gz"), mode="rt")
+            self.fh = gzip.open(f2, mode="rt")
         else:
             warn(
-                f"{self!r} is trying to include file: {f} but the file seems not to exist? Will disregard file!"
+                f"{self!r} is trying to include file: {f1!s} but the file seems not to exist? Will disregard file!"
             )
 
     def _popfile(self):
@@ -228,46 +228,61 @@ class fdfSileSiesta(SileSiesta):
         """
         self._seek()
 
-        def tolabel(label):
+        def tolabel(label) -> str:
             return label.lower().replace("_", "").replace("-", "").replace(".", "")
 
         labell = tolabel(label)
 
-        def valid_line(line):
+        def valid_line(line) -> bool:
             ls = line.strip()
             if len(ls) == 0:
                 return False
             return not (ls[0] in self._comment)
 
         def process_line(line):
+            nonlocal labell
+
             # Split line by spaces
-            ls = line.split()
-            if len(ls) == 0:
+            # Generally we only need to split once, and hence
+            # we use maxsplit, this should be a bit faster...
+            # At least when reading *MANY* files this can greatly
+            # impact performance.
+            ls = line.split(maxsplit=1)
+            nls = len(ls)
+            if nls == 0:
                 return None
 
             # Make a lower equivalent of ls
-            lsl = list(map(tolabel, ls))
+            ls0 = tolabel(ls[0])
 
             # Check if there is a pipe in the line
-            if "<" in lsl:
-                idx = lsl.index("<")
+            if nls > 1 and "<" in ls[1]:
+                # Split the rest, we do it here since it has a severe perf. impact
+                # by splitting the line, and joining again, so better to have it separated
+                # in the few corner cases we see in input files.
+                ls_left, ls_right = ls[1].split("<")
+                # The file should be stripped of lines
+                ls_right = ls_right.strip()
+
+                # get all labels on the LHS of '<'
+                lsN = [tolabel(l) for l in ls_left.split()]
                 # Now there are two cases
 
                 # 1. It is a block, in which case
                 #    the full block is piped into the label
                 #    %block Label < file
-                if lsl[0] == "%block" and lsl[1] == labell:
+                if ls0 == "%block" and lsN[0] == labell:
                     # Correct line found
                     # Read the file content, removing any empty and/or comment lines
-                    lines = self.dir_file(ls[3]).open("r").readlines()
+                    lines = self.dir_file(ls_right).open("r").readlines()
                     return [l.strip() for l in lines if valid_line(l)]
 
                 # 2. There are labels that should be read from a subsequent file
                 #    Label1 Label2 < other.fdf
-                if labell in lsl[:idx]:
+                if ls0 == labell or labell in lsN:
                     # Valid line, read key from other.fdf
                     return fdfSileSiesta(
-                        self.dir_file(ls[idx + 1]), base=self._directory
+                        self.dir_file(ls_right), base=self._directory
                     )._r_label(label)
 
                 # It is not in this line, either key is
@@ -276,23 +291,26 @@ class fdfSileSiesta(SileSiesta):
 
             # The last case is if the label is the first word on the line
             # In that case we have found what we are looking for
-            if lsl[0] == labell:
-                return (" ".join(ls[1:])).strip()
+            if ls0 == labell:
+                if nls == 1:
+                    return ""
+                return ls[1]
 
-            elif lsl[0] == "%block":
-                if lsl[1] == labell:
+            elif ls0 == "%block":
+                # we had only split once
+                if tolabel(ls[1]) == labell:
                     # Read in the block content
                     lines = []
 
                     # Now read lines
                     l = self.readline().strip()
-                    while not tolabel(l).startswith("%endblock"):
+                    while not l.lower().startswith("%endblock"):
                         if len(l) > 0:
                             lines.append(l)
                         l = self.readline().strip()
                     return lines
 
-            elif lsl[0] == "%include":
+            elif ls0 == "%include":
                 # We have to open a new file
                 self._pushfile(ls[1])
 
@@ -302,13 +320,13 @@ class fdfSileSiesta(SileSiesta):
         l = self.readline().split("#")[0]
         if len(l) == 0:
             return None
-        l = process_line(l)
+        l = process_line(l.strip())
         while l is None:
             l = self.readline().split("#")[0]
             if len(l) == 0:
                 if not self._popfile():
                     return None
-            l = process_line(l)
+            l = process_line(l.strip())
 
         return l
 
@@ -548,9 +566,9 @@ class fdfSileSiesta(SileSiesta):
                 value = value[:]
                 # do not skip to next line in next segment
                 value[-1] = value[-1].replace("\n", "")
-                s = f"{s}\n{''.join(value)}\n"
+                s = f"{s}\n {''.join(value)}\n"
             else:
-                s = "{s}\n{v}\n".format(s=s, v="\n".join(value))
+                s = "{s}\n {v}\n".format(s=s, v="\n".join(value))
             # We add an extra line after blocks
             s = f"{s}%endblock {key}\n"
         else:
@@ -729,7 +747,7 @@ class fdfSileSiesta(SileSiesta):
 
     def _r_lattice_nsc_nc(self, *args, **kwargs):
         f = self.dir_file(self.get("SystemLabel", default="siesta") + ".nc")
-        _track_file(self._r_lattice_nsc_nc, f, [("CDF.Save", "True")])
+        _track_file(self._r_lattice_nsc_nc, f, inputs=[("CDF.Save", "True")])
         if f.is_file():
             return ncSileSiesta(f).read_lattice_nsc()
         return None
@@ -782,7 +800,10 @@ class fdfSileSiesta(SileSiesta):
         """Returns `Lattice` object from the FDF file"""
         s = self.get("LatticeConstant", unit="Ang")
         if s is None:
-            raise SileError("Could not find LatticeConstant in file")
+            raise SileError(
+                "Could not find LatticeConstant in file: "
+                f"{self._directory!s}/{self.base_file!s}"
+            )
 
         # Read in cell
         cell = _a.emptyd([3, 3])
@@ -963,7 +984,7 @@ class fdfSileSiesta(SileSiesta):
         return None
 
     def read_fermi_level(self, *args, **kwargs) -> float:
-        """Read fermi-level from output of the calculation
+        """Read Fermi-level from output of the calculation
 
         Parameters
         ----------
@@ -985,6 +1006,7 @@ class fdfSileSiesta(SileSiesta):
                 if self.track:
                     info(f"{self.file}(read_fermi_level) found in file={f}")
                 return v
+        warn(MissingFermiLevelWarning(f"{self.file} could not find any Ef values."))
         return None
 
     def _r_fermi_level_nc(self):
@@ -2288,15 +2310,17 @@ class fdfSileSiesta(SileSiesta):
             _track_file(self._r_hamiltonian_hsx, f, f"  got version = {hsx.version}")
             if "atoms" not in kwargs:
                 kwargs["atoms"] = self.read_basis(order="^hsx")
-            H = hsx.read_hamiltonian(*args, **kwargs)
-            if hsx.version == 0:
+            # TODO python 3.11 (category= added)
+            with warnings.catch_warnings(record=True) as list_warns:
+                warnings.simplefilter("always")
+                H = hsx.read_hamiltonian(*args, **kwargs)
+            if list_warns and issubclass(
+                list_warns[-1].category, MissingFermiLevelWarning
+            ):
                 Ef = self.read_fermi_level()
-                if Ef is None:
-                    info(
-                        f"{self!r}.read_hamiltonian from HSX file failed shifting to the Fermi-level."
-                    )
-                else:
+                if Ef is not None:
                     H.shift(-Ef)
+                # else Ef is None, then a warning should have been raised.
         return H
 
     @default_ArgumentParser(description="Manipulate a FDF file.")

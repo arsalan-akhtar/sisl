@@ -1,9 +1,8 @@
-.. _unit:
 
 Unit conversion
 ===============
 
-.. module:: sisl.unit
+.. currentmodule:: sisl.unit
 
 Generic conversion utility between different units.
 
@@ -34,7 +33,7 @@ table that only converts simple units. E.g. Ry to eV etc.
 Siesta units
 ------------
 
-.. module:: sisl.unit.siesta
+.. currentmodule:: sisl.unit.siesta
 
 This subpackage implements the unit conversions used in `Siesta`_.
 

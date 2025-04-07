@@ -3,11 +3,13 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import reduce
 from numbers import Integral
-from typing import Callable, List, Literal, Optional, Tuple, Union
+from typing import Any, Literal, Optional, Protocol, Union
 
 import numpy as np
+import numpy.typing as npt
 
 import sisl._array as _a
 from sisl._ufuncs import register_sisl_dispatch
@@ -74,15 +76,22 @@ def write(geometry: Geometry, sile: SileLike, *args, **kwargs) -> None:
             fh.write_geometry(geometry, *args, **kwargs)
 
 
+class ApplyFunc(Protocol):
+    def __call__(self, data: npt.ArrayLike, axis: int) -> Any:
+        pass
+
+
 @register_sisl_dispatch(Geometry, module="sisl")
 def apply(
     geometry: Geometry,
-    data,
-    func,
+    data: npt.ArrayLike,
+    func: Union[ApplyFunc, str],
     mapper: Union[Callable[[int], int], str],
     axis: int = 0,
-    segments: Union[Literal["atoms", "orbitals", "all"], Iterator[int]] = "atoms",
-) -> ndarray:
+    segments: Union[
+        Literal["atoms", "orbitals", "all"], Union[Iterator[int], Iterator[List[int]]]
+    ] = "atoms",
+) -> np.ndarray:
     r"""Apply a function `func` to the data along axis `axis` using the method specified
 
     This can be useful for applying conversions from orbital data to atomic data through
@@ -93,12 +102,12 @@ def apply(
 
     Parameters
     ----------
-    data : array_like
+    data :
         the data to be converted
-    func : callable or str
+    func :
         a callable function that transforms the data in some way.
         If a `str`, will use ``getattr(numpy, func)``.
-    mapper : func, optional
+    mapper :
         a function transforming the `segments` into some other segments that
         is present in `data`.
         It can accept anything the `segments` returns.
@@ -107,7 +116,7 @@ def apply(
         axis selector for `data` along which `func` will be applied
     segments :
         which segments the `mapper` will recieve, if atoms, each atom
-        index will be passed to the `mapper(ia)`.
+        index will be passed to the ``mapper(ia)``.
         If ``'all'``, it will be ``range(data.shape[axis])``.
 
     Examples
@@ -118,7 +127,7 @@ def apply(
     >>> orbital_data = np.random.rand(10, g.no, 3)
     >>> atomic_data = g.apply(orbital_data, np.sum, mapper=partial(g.a2o, all=True), axis=1)
 
-    The same can be accomblished by passing an explicit segment iterator,
+    The same can be accomplished by passing an explicit segment iterator,
     note that ``iter(g) == range(g.na)``
 
     >>> atomic_data = g.apply(orbital_data, np.sum, mapper=partial(g.a2o, all=True), axis=1,
@@ -166,18 +175,18 @@ def apply(
 @register_sisl_dispatch(Geometry, module="sisl")
 def sort(
     geometry: Geometry, **kwargs
-) -> Union[Geometry, Tuple[Geometry, List[List[int]]]]:
+) -> Union[Geometry, tuple[Geometry, list[list[int]]]]:
     r"""Sort atoms in a nested fashion according to various criteria
 
-    There are many ways to sort a `Geometry`.
-    - by Cartesian coordinates, `axis`
-    - by lattice vectors, `lattice`
-    - by user defined vectors, `vector`
-    - by grouping atoms, `group`
-    - by a user defined function, `func`
-    - by a user defined function using internal sorting algorithm, `func_sort`
+    There are many ways to sort a `Geometry`:
 
-    - a combination of the above in arbitrary order
+    * by Cartesian coordinates, `axes`/`axis`
+    * by lattice vectors, `lattice`
+    * by user defined vectors, `vector`
+    * by grouping atoms, `group`
+    * by a user defined function, `func`
+    * by a user defined function using internal sorting algorithm, `func_sort`
+    * a combination of the above in arbitrary order
 
     Additionally one may sort ascending or descending.
 
@@ -187,26 +196,26 @@ def sort(
     ----------
     atoms : AtomsIndex, optional
        only perform sorting algorithm for subset of atoms. This is *NOT* a positional dependent
-       argument. All sorting algorithms will _only_ be performed on these atoms.
+       argument. All sorting algorithms will *only* be performed on these atoms.
        Default, all atoms will be sorted.
     ret_atoms : bool, optional
        return a list of list for the groups of atoms that have been sorted.
-    axis : int or tuple of int, optional
+    axis, axes : int or tuple of int, optional
        sort coordinates according to Cartesian coordinates, if a tuple of
-       ints is passed it will be equivalent to ``sort(axis0=axis[0], axis1=axis[1])``.
+       ints is passed it will be equivalent to ``sort(axes=axes) == sort(axis0=axes[0], axis1=axes[1])``.
        This behaves differently than `numpy.lexsort`!
     lattice : int or tuple of int, optional
        sort coordinates according to lattice vectors, if a tuple of
        ints is passed it will be equivalent to ``sort(lattice0=lattice[0], lattice1=lattice[1])``.
        Note that before sorting we multiply the fractional coordinates by the length of the
-       lattice vector. This ensures that `atol` is meaningful for both `axis` and `lattice` since
+       lattice vector. This ensures that `atol` is meaningful for both `axes` and `lattice` since
        they will be on the same order of magnitude.
        This behaves differently than `numpy.lexsort`!
     vector : Coord, optional
        sort along a user defined vector, similar to `lattice` but with a user defined
        direction. Note that `lattice` sorting and `vector` sorting are *only* equivalent
        when the lattice vector is orthogonal to the other lattice vectors.
-    group : {'Z', 'symbol', 'tag', 'species'} or (str, ...), optional
+    group : {'Z', 'symbol', 'tag', 'species'} or (list of list), optional
        group together a set of atoms by various means.
        `group` may be one of the listed strings.
        For ``'Z'`` atoms will be grouped in atomic number
@@ -247,8 +256,8 @@ def sort(
 
     Notes
     -----
-    The order of arguments is also the sorting order. ``sort(axis=0, lattice=0)`` is different
-    from ``sort(lattice=0, axis=0)``
+    The order of arguments is also the sorting order. ``sort(axes=0, lattice=0)`` is different
+    from ``sort(lattice=0, axes=0)``
 
     All arguments may be suffixed with integers. This allows multiple keyword arguments
     to control sorting algorithms
@@ -270,39 +279,39 @@ def sort(
 
     Sort according to :math:`x` coordinate
 
-    >>> geom.sort(axis=0)
+    >>> geom.sort(axes=0)
 
     Sort according to :math:`z`, then :math:`x` for each group created from first sort
 
-    >>> geom.sort(axis=(2, 0))
+    >>> geom.sort(axes=(2, 0))
 
     Sort according to :math:`z`, then first lattice vector
 
-    >>> geom.sort(axis=2, lattice=0)
+    >>> geom.sort(axes=2, lattice=0)
 
     Sort according to :math:`z` (ascending), then first lattice vector (descending)
 
-    >>> geom.sort(axis=2, ascend=False, lattice=0)
+    >>> geom.sort(axes=2, ascend=False, lattice=0)
 
     Sort according to :math:`z` (descending), then first lattice vector (ascending)
     Note how integer suffixes has no importance.
 
-    >>> geom.sort(ascend1=False, axis=2, ascend0=True, lattice=0)
+    >>> geom.sort(ascend1=False, axes=2, ascend0=True, lattice=0)
 
     Sort only atoms ``range(1, 5)`` first by :math:`z`, then by first lattice vector
 
-    >>> geom.sort(axis=2, lattice=0, atoms=np.arange(1, 5))
+    >>> geom.sort(axes=2, lattice=0, atoms=np.arange(1, 5))
 
     Sort two groups of atoms ``[range(1, 5), range(5, 10)]`` (individually) by :math:`z` coordinate
 
-    >>> geom.sort(axis=2, atoms=[np.arange(1, 5), np.arange(5, 10)])
+    >>> geom.sort(axes=2, atoms=[np.arange(1, 5), np.arange(5, 10)])
 
     The returned sorting indices may be used for manual sorting. Note
     however, that this requires one to perform a sorting for all atoms.
     In such a case the following sortings are equal.
 
-    >>> geom0, atoms0 = geom.sort(axis=2, lattice=0, ret_atoms=True)
-    >>> _, atoms1 = geom.sort(axis=2, ret_atoms=True)
+    >>> geom0, atoms0 = geom.sort(axes=2, lattice=0, ret_atoms=True)
+    >>> _, atoms1 = geom.sort(axes=2, ret_atoms=True)
     >>> geom1, atoms1 = geom.sort(lattice=0, atoms=atoms1, ret_atoms=True)
     >>> geom2 = geom.sub(np.concatenate(atoms0))
     >>> geom3 = geom.sub(np.concatenate(atoms1))
@@ -310,28 +319,28 @@ def sort(
     >>> assert geom0 == geom2
     >>> assert geom0 == geom3
 
-    Default sorting is equivalent to ``axis=(0, 1, 2)``
+    Default sorting is equivalent to ``axes=(0, 1, 2)``
 
-    >>> assert geom.sort() == geom.sort(axis=(0, 1, 2))
+    >>> assert geom.sort() == geom.sort(axes=(0, 1, 2))
 
     Sort along a user defined vector ``[2.2, 1., 0.]``
 
     >>> geom.sort(vector=[2.2, 1., 0.])
 
     Integer specification has no influence on the order of operations.
-    It is _always_ the keyword argument order that determines the operation.
+    It is *always* the keyword argument order that determines the operation.
 
-    >>> assert geom.sort(axis2=1, axis0=0, axis1=2) == geom.sort(axis=(1, 0, 2))
+    >>> assert geom.sort(axis2=1, axis0=0, axis1=2) == geom.sort(axes=(1, 0, 2))
 
     Sort by atomic numbers
 
     >>> geom.sort(group='Z') # 5, 6, 7
 
     One may group several elements together on an equal footing (``None`` means all non-mentioned elements)
-    The order of the groups are important (the first two are _not_ equal, the last three _are_ equal)
+    The order of the groups are important (the first two are *not* equal, the last three *are* equal)
 
-    >>> geom.sort(group=('symbol', 'C'), axis=2) # C will be sorted along z
-    >>> geom.sort(axis=1, atoms='C', axis1=2) # all along y, then C sorted along z
+    >>> geom.sort(group=('symbol', 'C'), axes=2) # C will be sorted along z
+    >>> geom.sort(axes=1, atoms='C', axes1=2) # all along y, then C sorted along z
     >>> geom.sort(group=('symbol', 'C', None)) # C, [B, N]
     >>> geom.sort(group=('symbol', None, 'C')) # [B, N], C
     >>> geom.sort(group=('symbol', ['N', 'B'], 'C')) # [B, N], C (B and N unaltered order)
@@ -342,6 +351,12 @@ def sort(
     tag:
 
     >>> geom.sort(group0='mass', group1='tag')
+
+    One can also manually specify to only sort sub-groups via atomic indices, the
+    following will keep ``[0, 1, 2]`` and ``[3, 4, 5]`` in their respective relative
+    position, but each block of atoms will be sorted along the 2nd lattice vector:
+
+    >>> geom.sort(group=([0, 1, 2], [3, 4, 5]), axes=1)
 
     A too high `atol` may have unexpected side-effects. This is because of the way
     the sorting algorithm splits the sections for nested sorting.
@@ -354,20 +369,20 @@ def sort(
     >>> x = np.arange(5) * 0.1
     >>> x[3:] -= 0.095
     y = z = np.zeros(5)
-    geom = si.Geometry(np.stack((x, y, z), axis=1))
+    geom = si.Geometry(np.stack((x, y, z), axes=1))
     >>> geom.xyz[:, 0]
     [0.    0.1   0.2   0.205 0.305]
 
     In this case a high tolerance (``atol>0.005``) would group atoms 2 and 3
     together
 
-    >>> geom.sort(atol=0.01, axis=0, ret_atoms=True)[1]
+    >>> geom.sort(atol=0.01, axes=0, ret_atoms=True)[1]
     [[0], [1], [2, 3], [4]]
 
     However, a very low tolerance will not find these two as atoms close
     to each other.
 
-    >>> geom.sort(atol=0.001, axis=0, ret_atoms=True)[1]
+    >>> geom.sort(atol=0.001, axes=0, ret_atoms=True)[1]
     [[0], [1], [2], [3], [4]]
     """
 
@@ -446,15 +461,16 @@ def sort(
     # Functions allowed by external users
     funcs = dict()
 
-    def _axis(axis, atoms, **kwargs):
+    def _axes(axes, atoms, **kwargs):
         """Cartesian coordinate sort"""
-        if isinstance(axis, int):
-            axis = (axis,)
-        for ax in axis:
-            atoms = _sort(geometry.xyz[:, ax], atoms, **kwargs)
+        if isinstance(axes, int):
+            axes = (axes,)
+        for axis in axes:
+            atoms = _sort(geometry.xyz[:, axis], atoms, **kwargs)
         return atoms
 
-    funcs["axis"] = _axis
+    funcs["axis"] = _axes
+    funcs["axes"] = _axes
 
     def _lattice(lattice, atoms, **kwargs):
         """
@@ -525,7 +541,7 @@ def sort(
 
     def _group_vals(vals, groups, atoms, **kwargs):
         """
-        vals should be of size len(geometry) and be parsable
+        `vals` should be of size ``len(geometry)`` and be parseable
         by numpy
         """
         nl = NestedList()
@@ -622,14 +638,15 @@ def sort(
         return _group_vals(np.array(vals), groups, atoms, **kwargs)
 
     funcs["group"] = _group
+    funcs["groups"] = _group
 
-    def stripint(s):
+    def stripint(s: str) -> str:
         """Remove integers from end of string -> Allow multiple arguments"""
         if s[-1] in "0123456789":
             return stripint(s[:-1])
         return s
 
-    # Now perform cumultative sort function
+    # Now perform cumulative sort function
     # Our point is that we would like to allow users to do consecutive sorting
     # based on different keys
 
@@ -638,7 +655,7 @@ def sort(
     func_kw["ascend"] = True
     func_kw["atol"] = 1e-9
 
-    def update_flag(kw, arg, val):
+    def update_flag(kw, arg, val) -> bool:
         if arg in ("ascending", "ascend"):
             kw["ascend"] = val
             return True
@@ -656,7 +673,7 @@ def sort(
 
     # In case the user just did geometry.sort, it will default to sort x, y, z
     if len(kwargs) == 0:
-        kwargs["axis"] = (0, 1, 2)
+        kwargs["axes"] = (0, 1, 2)
 
     for key_int, method in kwargs.items():
         key = stripint(key_int)
@@ -673,6 +690,8 @@ def sort(
     atoms_flat = atoms.ravel()
 
     # Ensure that all atoms are present
+    # This is necessary so we don't remove any atoms.
+    # Currently, the non-sorted atoms *stay* in-place.
     if len(atoms_flat) != len(geometry):
         all_atoms = _a.arangei(len(geometry))
         all_atoms[np.sort(atoms_flat)] = atoms_flat[:]
@@ -777,6 +796,7 @@ def tile(geometry: Geometry, reps: int, axis: CellAxis) -> Geometry:
      [1.5  1.   0. ]]
 
     In functional form:
+
     >>> tile(geom, 2, axis=0)
 
     See Also
@@ -856,6 +876,7 @@ def untile(
     True
 
     In functional form:
+
     >>> untile(geom, 2, axis=0)
 
     See Also
@@ -937,6 +958,7 @@ def repeat(geometry: Geometry, reps: int, axis: CellAxis) -> Geometry:
      [1.5  1.   0. ]]
 
     In functional form:
+
     >>> repeat(geom, 2, axis=0)
 
     See Also
@@ -1013,9 +1035,10 @@ def translate(
     """
     g = geometry.copy()
     if atoms is None:
-        g.xyz += np.asarray(v, g.xyz.dtype)
+        g.xyz += v
+        np.asarray(v, g.xyz.dtype)
     else:
-        g.xyz[geometry._sanitize_atoms(atoms).ravel(), :] += np.asarray(v, g.xyz.dtype)
+        g.xyz[geometry._sanitize_atoms(atoms).ravel(), :] += v
     return g
 
 
@@ -1087,7 +1110,7 @@ def rotate(
     geometry: Geometry,
     angle: float,
     v: Union[str, int, Coord],
-    origin: Optional[Union[int, Coord]] = None,
+    origin: Union[int, Coord] = (0, 0, 0),
     atoms: AtomsIndex = None,
     rad: bool = False,
     what: Optional[Literal["xyz", "abc", "abc+xyz", "x", "a", ...]] = None,
@@ -1112,14 +1135,14 @@ def rotate(
          lattice vectors (abc). Providing several is the combined direction.
     origin :
          the origin of rotation. Anything but ``[0, 0, 0]`` is equivalent
-         to a `geometry.translate(-origin).rotate(...).translate(origin)`.
+         to a ``geometry.translate(-origin).rotate(...).translate(origin)``.
          If this is an `int` it corresponds to the atomic index.
     atoms :
          only rotate the given atomic indices, if not specified, all
          atoms will be rotated.
     rad :
          if ``True`` the angle is provided in radians (rather than degrees)
-    what : {'xyz', 'abc', 'abc+xyz', <or combinations of "xyzabc">}
+    what :
         which coordinate subject should be rotated,
         if any of ``abc`` is in this string the corresponding cell vector will be rotated
         if any of ``xyz`` is in this string the corresponding coordinates will be rotated
@@ -1140,9 +1163,7 @@ def rotate(
     Quaternion : class to rotate
     Lattice.rotate : rotation for a Lattice object
     """
-    if origin is None:
-        origin = [0.0, 0.0, 0.0]
-    elif isinstance(origin, Integral):
+    if isinstance(origin, Integral):
         origin = geometry.axyz(origin)
     origin = _a.asarray(origin)
 
@@ -1378,7 +1399,7 @@ def append(
     axis :
         Cell direction to which the `other` geometry should be
         appended.
-    offset : {'none', 'min', (3,)}
+    offset :
         By default appending two structures will simply use the coordinates,
         as is.
         With 'min', the routine will shift both the structures along the cell
@@ -1447,7 +1468,7 @@ def prepend(
     """Prepend two structures along `axis`
 
     This will automatically add the ``geometry.cell[axis,:]`` to all atomic
-    coordiates in the `other` structure before appending.
+    coordinates in the `other` structure before appending.
 
     The basic algorithm is this:
 
@@ -1467,7 +1488,7 @@ def prepend(
     axis :
         Cell direction to which the `other` geometry should be
         prepended
-    offset : {'none', 'min', (3,)}
+    offset :
         By default appending two structures will simply use the coordinates,
         as is.
         With 'min', the routine will shift both the structures along the cell
@@ -1597,7 +1618,7 @@ def scale(
     scale :
        the scale factor for the new geometry (lattice vectors, coordinates
        and the atomic radii are scaled).
-    what: {"abc", "xyz"}
+    what :
 
        ``abc``
          Is applied on the corresponding lattice vector and the fractional coordinates.

@@ -3,7 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import math as m
 import operator
 import sys
 
@@ -74,6 +73,20 @@ def test_init_csr_inputs():
     indices = np.arange(2)
     indptr = np.arange(3)
     SparseCSR((data, indices, indptr))
+
+
+def test_csr_matrix_int64_fail():
+    # fixes #901
+    s = sc.sparse.csr_matrix((2, 2))
+    s[0, 0] = 1
+    s[1, 1] = 1
+    # this will also break scipy, but here for testing purposes:
+    s.indices = s.indices.astype(np.int64)
+    s.indptr = s.indptr.astype(np.int64)
+    sp = SparseCSR.fromsp(s)
+    assert sp.col.dtype == np.int32
+    assert sp.ncol.dtype == np.int32
+    assert sp.ptr.dtype == np.int32
 
 
 def test_fail_align1():
@@ -1476,7 +1489,7 @@ def test_fromsp_csr():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
 
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
     csr_1 = csr.tocsr(0)
     csr_2 = csr.tocsr(1)
 
@@ -1487,7 +1500,7 @@ def test_fromsp_csr():
 def test_transform1():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
 
     # real 1x2 matrix, dtype=np.complex128
     matrix = [[0.3, 0.7]]
@@ -1501,7 +1514,7 @@ def test_transform1():
 def test_transform2():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
 
     # real 2x2 matrix, dtype=np.float64
     matrix = [[0.3, 0], [0, 0.7]]
@@ -1516,7 +1529,7 @@ def test_transform2():
 def test_transform3():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
 
     # real 3x2 matrix
     matrix = [[0.3, 0], [0, 0.7], [0.1, 0.2]]
@@ -1532,7 +1545,7 @@ def test_transform3():
 def test_transform4():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
 
     # complex 1x2 matrix
     matrix = [[0.3j, 0.7j]]
@@ -1546,7 +1559,7 @@ def test_transform4():
 def test_transform_fail():
     csr1 = sc.sparse.random(10, 100, 0.01, random_state=24812)
     csr2 = sc.sparse.random(10, 100, 0.02, random_state=24813)
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp((csr1, csr2))
 
     # complex 1x3 matrix
     matrix = [[0.3j, 0.7j, 1.0]]
@@ -1572,7 +1585,7 @@ def test_fromsp_csr_large():
     assert csr1.getnnz() != csr2.getnnz()
 
     t0 = time()
-    csr = SparseCSR.fromsp(csr1, csr2)
+    csr = SparseCSR.fromsp([csr1, csr2])
     if print_time:
         print(f"timing: fromsp {time() - t0}")
     csr_1 = csr.tocsr(0)

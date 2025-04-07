@@ -18,8 +18,8 @@ from sisl.physics import (
     DynamicalMatrix,
     EnergyDensityMatrix,
     Hamiltonian,
-    SparseOrbitalBZ,
 )
+from sisl.physics.brillouinzone import MonkhorstPack
 from sisl.physics.overlap import Overlap
 from sisl.unit.siesta import unit_convert
 
@@ -144,9 +144,7 @@ class ncSileSiesta(SileCDFSiesta):
         xyz.shape = (-1, 3)
 
         if "BASIS" in self.groups:
-            basis = self.read_basis()
-            species = self.groups["BASIS"].variables["basis"][:] - 1
-            atom = Atoms([basis[i] for i in species])
+            atom = self.read_basis()
         else:
             atom = Atom(1)
 
@@ -249,15 +247,16 @@ class ncSileSiesta(SileCDFSiesta):
                 f"{self}.read_hamiltonian requires the stored matrix to be in Ry!"
             )
 
-        for i in range(len(H.spin)):
+        for i in range(H.spin.size(H.dtype)):
             H._csr._D[:, i] = sp.variables["H"][i, :] * Ry2eV
 
         # fix siesta specific notation
-        _mat_spin_convert(H)
+        _mat_siesta2sisl(H)
+        H = H.astype(dtype=kwargs.get("dtype"), copy=False)
 
         # Shift to the Fermi-level
-        Ef = -self._value("Ef")[:] * Ry2eV
-        H.shift(Ef)
+        Ef = self._value("Ef")[:] * Ry2eV
+        H.shift(-Ef)
 
         return H.transpose(spin=False, sort=kwargs.get("sort", True))
 
@@ -284,11 +283,12 @@ class ncSileSiesta(SileCDFSiesta):
         DM = self._r_class_spin(DensityMatrix, **kwargs)
 
         sp = self.groups["SPARSE"]
-        for i in range(len(DM.spin)):
+        for i in range(DM.spin.size(DM.dtype)):
             DM._csr._D[:, i] = sp.variables["DM"][i, :]
 
         # fix siesta specific notation
-        _mat_spin_convert(DM)
+        _mat_siesta2sisl(DM)
+        DM = DM.astype(dtype=kwargs.get("dtype"), copy=False)
 
         return DM.transpose(spin=False, sort=kwargs.get("sort", True))
 
@@ -302,13 +302,14 @@ class ncSileSiesta(SileCDFSiesta):
             Ef = np.tile(Ef, 2)
 
         sp = self.groups["SPARSE"]
-        for i in range(len(EDM.spin)):
+        for i in range(EDM.spin.size(EDM.dtype)):
             EDM._csr._D[:, i] = sp.variables["EDM"][i, :] * Ry2eV
             if i < 2 and "DM" in sp.variables:
                 EDM._csr._D[:, i] -= sp.variables["DM"][i, :] * Ef[i]
 
         # fix siesta specific notation
-        _mat_spin_convert(EDM)
+        _mat_siesta2sisl(EDM)
+        EDM = EDM.astype(dtype=kwargs.get("dtype"), copy=False)
 
         return EDM.transpose(spin=False, sort=kwargs.get("sort", True))
 
@@ -409,6 +410,14 @@ class ncSileSiesta(SileCDFSiesta):
         grid.grid = np.copy(np.swapaxes(grid.grid, 0, 2), order="C")
 
         return grid
+
+    def read_brillouinzone(self, trs: bool = True) -> MonkhorstPack:
+        """Read the Brillouin zone object"""
+        settings = self.groups["BASIS"]
+        kcell = settings.variables["BZ"][:, :]
+        kdispl = settings.variables["BZ_displ"][:]
+        geom = self.read_geometry()
+        return MonkhorstPack(geom, kcell, displacement=kdispl, trs=trs)
 
     def write_basis(self, atoms: Atoms):
         """Write the current atoms orbitals as the basis
@@ -616,21 +625,23 @@ class ncSileSiesta(SileCDFSiesta):
         Ef : float, optional
            the Fermi level of the electronic structure (in eV), default to 0.
         """
-        csr = H.transpose(spin=False, sort=False)._csr
-        if csr.nnz == 0:
+        H = H.transpose(spin=False, sort=False)
+        if H._csr.nnz == 0:
             raise SileError(
                 f"{self}.write_hamiltonian cannot write a zero element sparse matrix!"
             )
 
         # Convert to siesta CSR
-        _csr_to_siesta(H.geometry, csr)
-        csr.finalize(sort=kwargs.get("sort", True))
-        _mat_spin_convert(csr, H.spin)
+        _csr_to_siesta(H.geometry, H._csr)
+        H.finalize(sort=kwargs.get("sort", True))
+
+        H = H.astype(dtype=np.float64, copy=False)
+        _mat_sisl2siesta(H)
 
         # Ensure that the geometry is written
         self.write_geometry(H.geometry)
 
-        self._crt_dim(self, "spin", len(H.spin))
+        self._crt_dim(self, "spin", H.spin.size(H.dtype))
 
         if H.dkind != "f":
             raise NotImplementedError(
@@ -646,23 +657,23 @@ class ncSileSiesta(SileCDFSiesta):
         v[0] = kwargs.get("Q", kwargs.get("Qtot", H.geometry.q0))
 
         # Append the sparsity pattern
-        spgroup = self._write_sparsity(csr, H.geometry.nsc)
+        spgroup = self._write_sparsity(H._csr, H.geometry.nsc)
 
         # Save sparse matrices
-        self._write_overlap(spgroup, csr, H.orthogonal, H.S_idx)
+        self._write_overlap(spgroup, H._csr, H.orthogonal, H.S_idx)
 
         v = self._crt_var(
             spgroup,
             "H",
             "f8",
             ("spin", "nnzs"),
-            chunksizes=(1, len(csr.col)),
+            chunksizes=(1, len(H._csr.col)),
             **self._cmp_args,
         )
         v.info = "Hamiltonian"
         v.unit = "Ry"
-        for i in range(len(H.spin)):
-            v[i, :] = csr._D[:, i] / Ry2eV
+        for i in range(H.spin.size(H.dtype)):
+            v[i, :] = H._csr._D[:, i] / Ry2eV
 
         self._write_settings()
 
@@ -674,21 +685,23 @@ class ncSileSiesta(SileCDFSiesta):
         DM : DensityMatrix
            the model to be saved in the NC file
         """
-        csr = DM.transpose(spin=False, sort=False)._csr
-        if csr.nnz == 0:
+        DM = DM.transpose(spin=False, sort=False)
+        if DM._csr.nnz == 0:
             raise SileError(
                 f"{self}.write_density_matrix cannot write a zero element sparse matrix!"
             )
 
         # Convert to siesta CSR (we don't need to sort this matrix)
-        _csr_to_siesta(DM.geometry, csr)
-        csr.finalize(sort=kwargs.get("sort", True))
-        _mat_spin_convert(csr, DM.spin)
+        _csr_to_siesta(DM.geometry, DM._csr)
+        DM.finalize(sort=kwargs.get("sort", True))
+
+        DM = DM.astype(dtype=np.float64, copy=False)
+        _mat_sisl2siesta(DM)
 
         # Ensure that the geometry is written
         self.write_geometry(DM.geometry)
 
-        self._crt_dim(self, "spin", len(DM.spin))
+        self._crt_dim(self, "spin", DM.spin.size(DM.dtype))
 
         if DM.dkind != "f":
             raise NotImplementedError(
@@ -704,22 +717,22 @@ class ncSileSiesta(SileCDFSiesta):
             v[:] = kwargs["Q"]
 
         # Append the sparsity pattern
-        spgroup = self._write_sparsity(csr, DM.geometry.nsc)
+        spgroup = self._write_sparsity(DM._csr, DM.geometry.nsc)
 
         # Save sparse matrices
-        self._write_overlap(spgroup, csr, DM.orthogonal, DM.S_idx)
+        self._write_overlap(spgroup, DM._csr, DM.orthogonal, DM.S_idx)
 
         v = self._crt_var(
             spgroup,
             "DM",
             "f8",
             ("spin", "nnzs"),
-            chunksizes=(1, len(csr.col)),
+            chunksizes=(1, len(DM._csr.col)),
             **self._cmp_args,
         )
         v.info = "Density matrix"
-        for i in range(len(DM.spin)):
-            v[i, :] = csr._D[:, i]
+        for i in range(DM.spin.size(DM.dtype)):
+            v[i, :] = DM._csr._D[:, i]
 
         self._write_settings()
 
@@ -731,21 +744,23 @@ class ncSileSiesta(SileCDFSiesta):
         EDM : EnergyDensityMatrix
            the model to be saved in the NC file
         """
-        csr = EDM.transpose(spin=False, sort=False)._csr
-        if csr.nnz == 0:
+        EDM = EDM.transpose(spin=False, sort=False)
+        if EDM._csr.nnz == 0:
             raise SileError(
                 f"{self}.write_energy_density_matrix cannot write a zero element sparse matrix!"
             )
 
         # no need to sort this matrix
-        _csr_to_siesta(EDM.geometry, csr)
-        csr.finalize(sort=kwargs.get("sort", True))
-        _mat_spin_convert(csr, EDM.spin)
+        _csr_to_siesta(EDM.geometry, EDM._csr)
+        EDM.finalize(sort=kwargs.get("sort", True))
+
+        EDM = EDM.astype(dtype=np.float64, copy=False)
+        _mat_sisl2siesta(EDM)
 
         # Ensure that the geometry is written
         self.write_geometry(EDM.geometry)
 
-        self._crt_dim(self, "spin", len(EDM.spin))
+        self._crt_dim(self, "spin", EDM.spin.size(EDM.dtype))
 
         if EDM.dkind != "f":
             raise NotImplementedError(
@@ -765,23 +780,23 @@ class ncSileSiesta(SileCDFSiesta):
             v[:] = kwargs["Q"]
 
         # Append the sparsity pattern
-        spgroup = self._write_sparsity(csr, EDM.geometry.nsc)
+        spgroup = self._write_sparsity(EDM._csr, EDM.geometry.nsc)
 
         # Save sparse matrices
-        self._write_overlap(spgroup, csr, EDM.orthogonal, EDM.S_idx)
+        self._write_overlap(spgroup, EDM._csr, EDM.orthogonal, EDM.S_idx)
 
         v = self._crt_var(
             spgroup,
             "EDM",
             "f8",
             ("spin", "nnzs"),
-            chunksizes=(1, len(csr.col)),
+            chunksizes=(1, len(EDM._csr.col)),
             **self._cmp_args,
         )
         v.info = "Energy density matrix"
         v.unit = "Ry"
-        for i in range(len(EDM.spin)):
-            v[i, :] = csr._D[:, i] / Ry2eV
+        for i in range(EDM.spin.size(EDM.dtype)):
+            v[i, :] = EDM._csr._D[:, i] / Ry2eV
 
         self._write_settings()
 

@@ -3,9 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import math as m
-
-import numpy as np
 import pytest
 
 import sisl
@@ -27,6 +24,27 @@ def test_import_simple():
     sisl.io.xyzSile
 
 
+def test_submodule_attr_access():
+    for mod in (
+        "geom",
+        "io",
+        "physics",
+        "linalg",
+        "shape",
+        "mixing",
+        "utils",
+        "unit",
+        "C",
+        "constant",
+    ):
+        getattr(sisl, mod)
+
+
+def test_submodule_attr_access_viz():
+    pytest.importorskip("plotly")
+    sisl.viz
+
+
 def test_import_in_io():
     # The imports should only be visible in the io module
     with pytest.raises(AttributeError):
@@ -36,17 +54,10 @@ def test_import_in_io():
 def test_import_in_io_from():
     # The imports should only be visible in the io module
     with pytest.raises(ImportError):
-        from sisl import xyzSile
+        from sisl import xyzSile  # noqa: F401
 
 
-def test_dispatch_methods():
-    # sisl exposes some dispatch methods via
-    #  sisl._ufuncs and sisl._core._*_ufuncs.py
-    # For instance tile is the first, true dispatch
-    # method used.
-    sisl.tile
-
-
-def test_dispatch_methods_not_allowed():
+@pytest.mark.parametrize("obj", [dict(), 2])
+def test_dispatch_methods_not_allowed(obj):
     with pytest.raises(sisl.SislError):
-        sisl.tile(2)
+        sisl.tile(obj, 0, 2)

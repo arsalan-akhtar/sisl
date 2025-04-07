@@ -30,15 +30,7 @@ Siesta
    kpSileSiesta - k-points from simulation
    rkpSileSiesta - k-points to simulation
    structSileSiesta - geometry in STRUCT_* files
-
-
-.. autosummary::
-   :toctree: generated/
-   :hidden:
-
-   SileSiesta
-   SileCDFSiesta
-   SileBinSiesta
+   timesSileSiesta - timings from siesta
 
 
 TranSiesta

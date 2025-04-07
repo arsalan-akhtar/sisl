@@ -37,6 +37,7 @@ except ImportError:
 from scipy.interpolate import interp1d
 
 import sisl as si
+from sisl._internal import set_module
 from sisl.utils import NotNonePropertyDict, PropertyDict
 
 __all__ = ["AtomInput", "atom_plot_cli"]
@@ -94,6 +95,7 @@ _shell_order = [
 _spdfgh = "spdfgh"
 
 
+@set_module("sisl_toolbox.siesta.atom")
 class AtomInput:
     """Input for the ``atom`` program see [AtomLicense]_
 
@@ -801,7 +803,7 @@ class AtomInput:
         return fig, axs
 
 
-def atom_plot_cli(subp=None):
+def atom_plot_cli(subp=None, parser_kwargs={}):
     """Run plotting command for the output of atom"""
 
     is_sub = not subp is None
@@ -810,11 +812,11 @@ def atom_plot_cli(subp=None):
     if is_sub:
         global _script
         _script = f"{_script} atom-plot"
-        p = subp.add_parser("atom-plot", description=title, help=title)
+        p = subp.add_parser("atom-plot", description=title, help=title, **parser_kwargs)
     else:
         import argparse
 
-        p = argparse.ArgumentParser(title)
+        p = argparse.ArgumentParser(title, **parser_kwargs)
 
     p.add_argument(
         "--plot",
@@ -852,6 +854,7 @@ from sisl_toolbox.cli import register_toolbox_cli
 register_toolbox_cli(atom_plot_cli)
 
 
+@set_module("sisl_toolbox.siesta.atom")
 def atom_plot(args):
     import matplotlib.pyplot as plt
 

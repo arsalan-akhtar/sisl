@@ -3,8 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-import math as m
-
 import numpy as np
 import pytest
 
@@ -25,7 +23,7 @@ def test_create_ellipsoid():
     v1 = [1.0, -0.2, 1.0]
     v2 = [1.0, -0.2, -1.0]
     el = Ellipsoid([v0, v1, v2])
-    q = Quaternion(45, [1, 0, 0])
+    q = Quaternion(45, [1, 0, 0], rad=False)
     eye = np.identity(3)
     eye = q.rotate(eye)
     el = Ellipsoid(eye)

@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-""" A command-line-interface for toolboxes that provide CLI
+"""A command-line-interface for toolboxes that provide CLI
 
 This is a wrapper with sub-commands the toolboxes that are
 accessible.
@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+
+from sisl._lib._argparse import SislHelpFormatter
 
 
 class SToolBoxCLI:
@@ -47,7 +49,9 @@ class SToolBoxCLI:
         # Create command-line
         cmd = Path(sys.argv[0])
         p = argparse.ArgumentParser(
-            f"{cmd.name}", description="Specific toolboxes to aid sisl users"
+            f"{cmd.name}",
+            description="Specific toolboxes to aid sisl users",
+            formatter_class=SislHelpFormatter,
         )
 
         info = {
@@ -64,7 +68,7 @@ class SToolBoxCLI:
         subp = p.add_subparsers(**info)
 
         for cmd in self._cmds:
-            cmd(subp)
+            cmd(subp, parser_kwargs=dict(formatter_class=p.formatter_class))
 
         args = p.parse_args(argv)
         args.runner(args)

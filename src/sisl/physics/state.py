@@ -3,13 +3,14 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
+from abc import abstractmethod
+from collections.abc import Callable
 from functools import singledispatchmethod
-from numbers import Real
-from typing import Callable, Literal, Optional
+from typing import Literal, Optional
 
 import numpy as np
+import numpy.typing as npt
 from numpy import bool_, einsum, exp, ndarray
-from scipy.sparse import csr_matrix
 
 import sisl._array as _a
 from sisl._core import Geometry
@@ -17,7 +18,10 @@ from sisl._help import dtype_real_to_complex
 from sisl._internal import set_module
 from sisl.linalg import eigh_destroy
 from sisl.messages import deprecate_argument, warn
-from sisl.typing import CartesianAxes, GaugeType, npt
+from sisl.typing import CartesianAxes, GaugeType, ProjectionType
+from sisl.typing._physics import ProjectionTypeHadamard, ProjectionTypeHadamardAtoms
+
+from ._common import comply_gauge, comply_projection
 
 __all__ = ["degenerate_decouple", "Coefficient", "State", "StateC"]
 
@@ -303,6 +307,16 @@ coefficients retained in this object
             deg.append(np.append(sidx[idx], sidx[idx[-1] + 1]))
         return deg
 
+    @abstractmethod
+    def sub(self, *args, **kwargs):
+        """Return a subset of this instance"""
+        # defined in _ufuncs_*.py
+
+    @abstractmethod
+    def remove(self, *args, **kwargs):
+        """Return a subset of this instance, by removing some elements"""
+        # defined in _ufuncs_*.py
+
     def __getitem__(self, key):
         """Return a new coefficient object with only one associated coefficient
 
@@ -401,6 +415,14 @@ state coefficients
         """Returns the shape of the state"""
         return self.state.shape
 
+    @abstractmethod
+    def sub(self, *args, **kwargs):
+        """Return a subset of this instance"""
+
+    @abstractmethod
+    def remove(self, *args, **kwargs):
+        """Return a subset of this instance, by removing some elements"""
+
     def translate(self, isc):
         r"""Translate the vectors to a new unit-cell position
 
@@ -487,7 +509,12 @@ state coefficients
         "0.15",
         "0.16",
     )
-    def norm2(self, projection: Literal["sum", "atoms", "basis"] = "sum"):
+    def norm2(
+        self,
+        projection: Union[
+            ProjectionType, ProjectionTypeHadamard, ProjectionTypeHadamardAtoms
+        ] = "diagonal",
+    ):
         r"""Return a vector with the norm of each state :math:`\langle\psi|\psi\rangle`
 
         Parameters
@@ -517,12 +544,11 @@ state coefficients
                \big[\sum_i |\psi_{\alpha,i}|^2\big]^q}
 
         where :math:`\alpha` is the band index and :math:`i` is the orbital.
-        The order of the IPR is defaulted to :math:`q=2`, see :eq:`ipr2` for details.
+        The order of the IPR is defaulted to :math:`q=2`, see following equation for details.
         The IPR may be used to distinguish Anderson localization and extended
         states:
 
         .. math::
-           :label: ipr2
            :nowrap:
 
             \begin{align}
@@ -534,7 +560,7 @@ state coefficients
                \end{aligned}\right.
             \end{align}
 
-        For further details see :cite:`Murphy2011`. Note that for eigen states the IPR reduces to:
+        For further details see :cite:`Murphy2011`. Note that for eigenstates the IPR reduces to:
 
         .. math::
             I_{q,\alpha} = \sum_i |\psi_{\alpha,i}|^{2q}
@@ -547,7 +573,7 @@ state coefficients
           order parameter for the IPR
         """
         # This *has* to be a real value C * C^* == real
-        state_abs2 = self.norm2(projection="basis").real
+        state_abs2 = self.norm2(projection="hadamard").real
         assert q >= 2, f"{self.__class__.__name__}.ipr requires q>=2"
         # abs2 is already having the exponent 2
         return (state_abs2**q).sum(-1) / state_abs2.sum(-1) ** q
@@ -657,7 +683,9 @@ state coefficients
         self,
         ket=None,
         matrix=None,
-        projection: Literal["diag", "atoms", "basis", "matrix"] = "diag",
+        projection: Union[
+            ProjectionType, ProjectionTypeHadamard, ProjectionTypeHadamardAtoms
+        ] = "diagonal",
     ):
         r"""Calculate the inner product as :math:`\mathbf A_{ij} = \langle\psi_i|\mathbf M|\psi'_j\rangle`
 
@@ -665,20 +693,21 @@ state coefficients
 
         * for ``matrix`` it will compute off-diagonal elements as well
 
-        .. math::
-            \mathbf A_{\alpha\beta} = \langle\psi_\alpha|\mathbf M|\psi'_\beta\rangle
+            .. math::
+                \mathbf A_{\alpha\beta} = \langle\psi_\alpha|\mathbf M|\psi'_\beta\rangle
 
         * for ``diag`` only the diagonal components will be returned
 
-        .. math::
-            \mathbf a_\alpha = \langle\psi_\alpha|\mathbf M|\psi_\alpha\rangle
+            .. math::
+                \mathbf a_\alpha = \langle\psi_\alpha|\mathbf M|\psi_\alpha\rangle
 
         * for ``basis``, only do inner products for individual states, but return them basis-resolved
 
-        .. math::
-            \mathbf A_{\alpha\beta} = \psi^*_{\alpha,\beta} \mathbf M|\psi_\alpha\rangle_\beta
+            .. math::
+                \mathbf A_{\alpha\beta} = \psi^*_{\alpha,\beta} \mathbf M|\psi_\alpha\rangle_\beta
 
         * for ``atoms``, only do inner products for individual states, but return them atom-resolved
+
 
         Parameters
         ----------
@@ -693,14 +722,18 @@ state coefficients
             This can be used to sum specific sub-elements, return the diagonal, or the
             full matrix.
 
-            * ``diag`` only return the diagonal of the inner product
-            * ``matrix`` a matrix with diagonals and the off-diagonals
-            * ``basis`` only do inner products for individual states, but return them basis-resolved
+            * ``diagonal`` only return the diagonal of the inner product ('ii' elements)
+            * ``matrix`` a matrix with diagonals and the off-diagonals ('ij' elements)
+            * ``hadamard`` only do element wise products for the states (equivalent to
+              basis resolved inner-products)
             * ``atoms`` only do inner products for individual states, but return them atom-resolved
+
 
         Notes
         -----
-        This does *not* take into account a possible overlap matrix when non-orthogonal basis sets are used. One have to add the overlap matrix in the `matrix` argument, if needed.
+        This does *not* take into account a possible overlap matrix when
+        non-orthogonal basis sets are used.
+        One have to add the overlap matrix in the `matrix` argument, if needed.
 
         Raises
         ------
@@ -756,19 +789,15 @@ state coefficients
                     f"{self.__class__.__name__}.inner requires the objects to have matching shapes bra @ M @ ket bra={self.shape}, M={M.shape}, ket={ket.shape[::-1]}"
                 )
 
-        projection = {
-            # temporary work-around for older codes where project/diag=T|F were allowed
-            True: "diag",
-            False: "matrix",
-            "sum": "diag",  # still allowed here (for bypass options)
-            "atoms": "atom",  # plural s allowed
-            "orbitals": "orbital",  # still allowed here (for bypass options)
-        }.get(projection, projection)
+        if isinstance(projection, bool):
+            projection = "diagonal" if projection else "matrix"
+        projection = comply_projection(projection)
 
-        if projection in ("diag", "diagonal"):
+        if projection == "diagonal":
             if bra.shape[0] != ket.shape[0]:
                 raise ValueError(
-                    f"{self.__class__.__name__}.inner diagonal matrix product is non-square, please use diag=False or reduce number of vectors."
+                    f"{self.__class__.__name__}.inner diagonal matrix product is "
+                    "non-square, please use projection!=diagonal or reduce number of vectors."
                 )
             if ndim == 2:
                 Aij = einsum("ij,ji->i", np.conj(bra), M @ ket.T)
@@ -777,7 +806,7 @@ state coefficients
             elif ndim == 0:
                 Aij = einsum("ij,ij->i", np.conj(bra), ket) * M
 
-        elif projection in ("matrix", "none"):
+        elif projection == "matrix":
             if ndim == 2:
                 Aij = np.conj(bra) @ (M @ ket.T)
             elif ndim == 1:
@@ -785,34 +814,50 @@ state coefficients
             elif ndim == 0:
                 Aij = einsum("ij,kj->ik", np.conj(bra), ket) * M
 
-        elif projection in ("atom", "basis", "orbital"):
+        elif projection == "hadamard":
             if ndim == 2:
                 Aij = np.conj(bra) * (M @ ket.T).T
             else:
                 Aij = np.conj(bra) * ket * M
 
-            # Now do the projection
-            if projection == "atom":
-                # Now we need to convert it
-                geom = self._geometry()
-                if Aij.shape[1] == geom.no * 2:
-                    # We have some kind of spin-configuration (hidden)
-                    def mapper(atom):
-                        return np.arange(
-                            geom.firsto[atom] * 2, geom.firsto[atom + 1] * 2
-                        )
+        elif projection == "hadamard:atoms":
+            if ndim == 2:
+                Aij = np.conj(bra) * (M @ ket.T).T
+            else:
+                Aij = np.conj(bra) * ket * M
 
-                elif Aij.shape[1] == geom.no:
+            # Now we need to convert it
+            geom = self._geometry()
+            if Aij.shape[1] == geom.no * 2:
+                # We have some kind of spin-configuration (hidden)
+                def mapper(atom):
+                    return np.arange(geom.firsto[atom] * 2, geom.firsto[atom + 1] * 2)
 
-                    def mapper(atom):
-                        return np.arange(geom.firsto[atom], geom.firsto[atom + 1])
+            elif Aij.shape[1] == geom.no:
 
-                else:
-                    raise RuntimeError(
-                        f"{self.__class__.__name__}.inner could not determine "
-                        "the correct atom conversions."
-                    )
-                Aij = geom.apply(Aij, np.sum, mapper, axis=1)
+                def mapper(atom):
+                    return np.arange(geom.firsto[atom], geom.firsto[atom + 1])
+
+            else:
+                raise RuntimeError(
+                    f"{self.__class__.__name__}.inner could not determine "
+                    "the correct atom conversions."
+                )
+            Aij = geom.apply(Aij, np.sum, mapper, axis=1)
+
+        elif projection == "trace":
+            if bra.shape[0] != ket.shape[0]:
+                raise ValueError(
+                    f"{self.__class__.__name__}.inner diagonal matrix product is "
+                    "non-square, cannot do the trace."
+                )
+            if ndim == 2:
+                Aij = einsum("ij,ji->i", np.conj(bra), M @ ket.T).sum()
+            elif ndim == 1:
+                Aij = einsum("ij,j,ij->i", np.conj(bra), M, ket).sum()
+            elif ndim == 0:
+                Aij = (einsum("ij,ij->i", np.conj(bra), ket) * M).sum()
+
         else:
             raise ValueError(
                 f"{self.__class__.__name__}.inner got unknown argument 'projection'={projection}"
@@ -917,8 +962,8 @@ state coefficients
         --------
         align_phase : rotate states such that their phases align
         """
-        snorm = self.norm2(projection="basis").real
-        onorm = other.norm2(projection="basis").real
+        snorm = self.norm2(projection="hadamard").real
+        onorm = other.norm2(projection="hadamard").real
 
         # Now find new orderings
         show_warn = False
@@ -961,16 +1006,17 @@ state coefficients
 
             \tilde C_\alpha = e^{i\mathbf k\mathbf r_\alpha} C_\alpha
 
-        where :math:`C_\alpha` and :math:`\tilde C_\alpha` belongs to the ``orbital`` and ``cell`` gauge, respectively.
+        where :math:`C_\alpha` and :math:`\tilde C_\alpha` belongs to the ``atomic`` and
+        ``lattice`` gauge, respectively.
 
         Parameters
         ----------
-        gauge : {'cell', 'orbital'}
+        gauge :
             specify the new gauge for the mode coefficients
         offset : array_like, optional
             whether the coordinates should be offset by another phase-factor
         """
-        gauge = {"R": "cell", "r": "orbital", "orbitals": "orbital"}.get(gauge, gauge)
+        gauge = comply_gauge(gauge)
 
         # These calls will fail if the gauge is not specified.
         # In that case it will not do anything
@@ -1001,12 +1047,14 @@ state coefficients
             if self.shape[1] == g.no * 2:
                 phase = np.repeat(phase, 2)
 
-        if gauge == "orbital":
+        if gauge == "atomic":
             # R -> r gauge tranformation.
             self.state *= exp(-1j * phase).reshape(1, -1)
-        elif gauge == "cell":
+        elif gauge == "lattice":
             # r -> R gauge tranformation.
             self.state *= exp(1j * phase).reshape(1, -1)
+        else:
+            raise ValueError("change_gauge: gauge must be in [lattice, atomic]")
 
     # def toStateC(self, norm=1.):
     #     r""" Transforms the states into normalized values equal to `norm` and specifies the coefficients in `StateC` as the norm

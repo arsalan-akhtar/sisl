@@ -3,7 +3,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-from typing import Callable, ChainMap, Literal, Optional, Sequence, Tuple, Union
+from collections import ChainMap
+from collections.abc import Callable, Sequence
+from typing import Literal, Optional, Union
 
 from sisl._core import Geometry, Grid
 
@@ -65,12 +67,12 @@ def grid_plot(
     transforms: Sequence[Union[str, Callable]] = (),
     reduce_method: Literal["average", "sum"] = "average",
     boundary_mode: str = "grid-wrap",
-    nsc: Tuple[int, int, int] = (1, 1, 1),
-    interp: Tuple[int, int, int] = (1, 1, 1),
+    nsc: tuple[int, int, int] = (1, 1, 1),
+    interp: tuple[int, int, int] = (1, 1, 1),
     isos: Sequence[dict] = [],
     smooth: bool = False,
     colorscale: Optional[Colorscale] = None,
-    crange: Optional[Tuple[float, float]] = None,
+    crange: Optional[tuple[float, float]] = None,
     cmid: Optional[float] = None,
     show_cell: Literal["box", "axes", False] = "box",
     cell_style: dict = {},
@@ -138,7 +140,7 @@ def grid_plot(
         The backend to use to generate the figure.
 
     See also
-    ----------
+    --------
     scipy.ndimage.affine_transform : method used to orthogonalize the grid if needed.
     """
 
@@ -215,12 +217,12 @@ def wavefunction_plot(
     transforms: Sequence[Union[str, Callable]] = (),
     reduce_method: Literal["average", "sum"] = "average",
     boundary_mode: str = "grid-wrap",
-    nsc: Tuple[int, int, int] = (1, 1, 1),
-    interp: Tuple[int, int, int] = (1, 1, 1),
+    nsc: tuple[int, int, int] = (1, 1, 1),
+    interp: tuple[int, int, int] = (1, 1, 1),
     isos: Sequence[dict] = [],
     smooth: bool = False,
     colorscale: Optional[Colorscale] = None,
-    crange: Optional[Tuple[float, float]] = None,
+    crange: Optional[tuple[float, float]] = None,
     cmid: Optional[float] = None,
     show_cell: Literal["box", "axes", False] = "box",
     cell_style: dict = {},
@@ -297,7 +299,7 @@ def wavefunction_plot(
         The backend to use to generate the figure.
 
     See also
-    ----------
+    --------
     scipy.ndimage.affine_transform : method used to orthogonalize the grid if needed.
     """
 

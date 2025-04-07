@@ -4,24 +4,29 @@
 from __future__ import annotations
 
 import gzip
+import inspect
 import logging
 import re
-from functools import reduce, wraps
+from collections.abc import Callable
+from functools import wraps
 from io import TextIOBase
 from itertools import product
-from operator import and_, contains
+from operator import contains
 from os.path import basename, splitext
 from pathlib import Path
 from textwrap import dedent, indent
-from typing import Any, Callable, Optional, Union
+from types import MethodType
+from typing import Any, Optional, Union
 
-import sisl.io._exceptions as _exceptions
 from sisl._environ import get_environ_variable
+from sisl._help import has_module
 from sisl._internal import set_module
-from sisl.messages import SislInfo, SislWarning, deprecate, info, warn
+from sisl.messages import deprecate, info, warn
 from sisl.utils.misc import str_spec
 
-from ._exceptions import *
+from . import _except_base, _except_objects
+from ._except_base import *
+from ._except_objects import *
 from ._help import *
 
 # Public used objects
@@ -34,7 +39,8 @@ __all__ += [
     "SileCDF",
     "SileBin",
 ]
-__all__.extend(_exceptions.__all__)
+__all__.extend(_except_base.__all__)
+__all__.extend(_except_objects.__all__)
 
 # Decorators or sile-specific functions
 __all__ += ["sile_fh_open", "sile_raise_write", "sile_raise_read"]
@@ -357,8 +363,13 @@ def get_sile_class(filename, *args, **kwargs):
                     f"Cannot determine the exact Sile requested, multiple hits: {tuple(e.cls.__name__ for e in eligibles)}"
                 )
 
+        # Print-out error on which extensions it tried (and full filename)
+        if len(end_list) == 1:
+            ext_list = end_list
+        else:
+            ext_list = end_list[1:]
         raise NotImplementedError(
-            f"Sile for file '{filename}' could not be found, "
+            f"Sile for file '{filename}' ({ext_list}) could not be found, "
             "possibly the file has not been implemented."
         )
 
@@ -654,15 +665,15 @@ class BaseSile:
         return f"{self.__class__.__name__}({self.base_file!s}, base={d!s})"
 
 
-def sile_fh_open(from_closed=False, reset=None):
+def sile_fh_open(from_closed: bool = False, reset: Callable[[BaseSile], None] = None):
     """Method decorator for objects to directly implement opening of the
     file-handle upon entry (if it isn't already).
 
     Parameters
     ----------
-    from_closed : bool, optional
+    from_closed :
        ensure the wrapped function *must* open the file, otherwise it will seek to 0.
-    reset : callable, optional
+    reset :
        in case the file gets opened a new, then the `reset` method will be called as
        ``reset(self)``
     """
@@ -678,17 +689,10 @@ def sile_fh_open(from_closed=False, reset=None):
 
             @wraps(func)
             def pre_open(self, *args, **kwargs):
-                # only call reset if the file should be reset
-                _reset = reset
-                if hasattr(self, "fh"):
-
-                    def _reset(self):
-                        pass
-
                 with self:
-                    # REMARK this requires the __enter__ to seek(0)
-                    # for the file, and currently it does
-                    _reset(self)
+                    # This happens when the file seeks to 0,
+                    # so basically the same as re-opening the file
+                    reset(self)
                     return func(self, *args, **kwargs)
 
             return pre_open
@@ -765,113 +769,31 @@ class Info:
     """
 
     # default to be empty
-    _info_attributes_ = []
+    _info_attributes_: List[InfoAttr] = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.info = _Info(self)
-
-    class _Info:
-        """The actual .info object that will attached to the instance.
-
-        As of now this is problematic to document.
-        We should figure out a way to do that.
-        """
-
-        def __init__(self, instance):
-            # attach this info instance to the instance
-            self._instance = instance
-            self._attrs = []
-            self._properties = []
-
-            # Patch once the properties has been created
-
-            # Patch the readline of the instance
-            def patch(info):
-                # grab the function to be patched
-                instance = info._instance
-                properties = info._properties
-                func = instance.readline
-
-                @wraps(func)
-                def readline(*args, **kwargs):
-                    line = func(*args, **kwargs)
-                    for prop in properties:
-                        prop.process(line)
-                    return line
-
-                return readline
-
-            self._instance.readline = patch(self)
-
-            # add the properties
-            for prop in instance._info_attributes_:
-                if isinstance(prop, dict):
-                    prop = InfoAttr(**prop)
-                else:
-                    prop = prop.copy()
-                self.add_property(prop)
-
-        def add_property(self, prop):
-            """Add a new property to be reachable from the .info"""
-            self._attrs.append(prop.attr)
-            self._properties.append(prop)
-
-        def __str__(self):
-            """Return a string of the contained attributes, with the values they currently contain"""
-            return "\n".join([p.documentation() for p in self._properties])
-
-        def __getattr__(self, attr):
-            """Overwrite the attribute retrieval to be able to fetch the actual values from the information"""
-            inst = self._instance
-            if attr not in self._attrs:
-                raise AttributeError(
-                    f"{inst.__class__.__name__}.info.{attr} does not exist, did you mistype?"
-                )
-
-            idx = self._attrs.index(attr)
-            prop = self._properties[idx]
-            if prop.found:
-                # only when hitting the new line will this change...
-                return prop.value
-
-            # we need to parse the rest of the file
-            # This is not ideal, but...
-            loc = None
-            try:
-                loc = inst.fh.tell()
-            except AttributeError:
-                pass
-            with inst:
-                line = inst.readline()
-                while not (prop.found or line == ""):
-                    line = inst.readline()
-            if loc is not None:
-                inst.fh.seek(loc)
-
-            if not prop.found:
-                prop.not_found(inst, prop)
-
-            return prop.value
 
     class InfoAttr:
         """Holder for parsing lines and extracting information from text files
 
         This consists of:
 
-        attr:
+        name:
             the name of the attribute
             This will be the `sile.info.<name>` access point.
-        regex:
+        searcher:
             the regular expression used to match a line.
             If a `str`, it will be compiled *as is* to a regex pattern.
             `regex.match(line)` will be used to check if the value should be updated.
+            It can also be a direct method called
         parser:
             if `regex.match(line)` returns a match that is true, then this parser will
             be executed.
             The parser *must* be a function accepting two arguments:
 
-                def parser(attr, match)
+                def parser(attr, instance, match)
 
             where `attr` is this object, and `match` is the match done on the line.
             (Note that `match.string` will return the full line used to match against).
@@ -890,10 +812,11 @@ class Info:
         """
 
         __slots__ = (
-            "attr",
-            "regex",
+            "name",
+            "searcher",
             "parser",
             "updatable",
+            "default",
             "value",
             "found",
             "doc",
@@ -902,21 +825,59 @@ class Info:
 
         def __init__(
             self,
-            attr: str,
-            regex: Union[str, re.Pattern],
-            parser,
+            name: str,
+            searcher: Union[Callable[[InfoAttr, BaseSile, str], str], str, re.Pattern],
+            parser: Callable[
+                [InfoAttr, BaseSile, Union[str, re.Match]], Any
+            ] = lambda attr, inst, line: line,
             doc: str = "",
             updatable: bool = False,
             default: Optional[Any] = None,
             found: bool = False,
-            not_found: Optional[Callable[[Any, InfoAttr], None]] = None,
+            not_found: Union[None, str, Callable[[Any, InfoAttr], None]] = None,
+            instance: Any = None,
         ):
-            self.attr = attr
-            if isinstance(regex, str):
-                regex = re.compile(regex)
-            self.regex = regex
+            self.name = name
+
+            if isinstance(searcher, str):
+                searcher = re.compile(searcher)
+
+            elif searcher is None:
+                searcher = lambda info, instance, line: line
+
+            if isinstance(searcher, re.Pattern):
+
+                def used_searcher(info, instance, line):
+                    nonlocal searcher
+
+                    match = searcher.match(line)
+                    if match:
+                        info.value = info.parser(info, instance, match)
+                        # print(f"found {info.name}={info.value} with {line}")
+                        info.found = True
+                        return True
+
+                    return False
+
+                used_searcher.pattern = searcher.pattern
+            else:
+
+                used_searcher = searcher
+                used_searcher.pattern = "<custom>"
+
+            self.searcher = used_searcher
             self.parser = parser
             self.updatable = updatable
+
+            # Figure out if `self` is in the arguments of `default`
+            # If so, instance bind it, use MethodType
+            if callable(default) and instance is not None:
+                if "self" in inspect.signature(default).parameters:
+                    # Do a type-binding
+                    default = MethodType(default, instance)
+
+            self.default = default
+            # Also set the actual value to the default one
             self.value = default
             self.found = found
             self.doc = doc
@@ -928,13 +889,13 @@ class Info:
 
                     def not_found(obj, attr):
                         raise method(
-                            f"Attribute {attr.attr} could not be found in {obj}."
+                            f"Attribute {attr.name} could not be found in {obj}."
                         )
 
                 else:
 
                     def not_found(obj, attr):
-                        method(f"Attribute {attr.attr} could not be found in {obj}.")
+                        method(f"Attribute {attr.name} could not be found in {obj}.")
 
                 return not_found
 
@@ -960,30 +921,29 @@ class Info:
 
             self.not_found = not_found
 
-        def process(self, line):
+        def process(self, instance, line):
             if self.found and not self.updatable:
                 return False
 
-            match = self.regex.match(line)
-            if match:
-                self.value = self.parser(self, match)
-                # print(f"found {self.attr}={self.value} with {line}")
-                self.found = True
-                return True
+            return self.searcher(self, instance, line)
 
-            return False
+        def reset(self):
+            """Reset the property to the default value"""
+            self.value = self.default
 
-        def copy(self):
-            return self.__class__(
-                attr=self.attr,
-                regex=self.regex,
+        def copy(self, instance: Any = None):
+            obj = self.__class__(
+                name=self.name,
+                searcher=self.searcher,
                 parser=self.parser,
                 doc=self.doc,
                 updatable=self.updatable,
                 default=self.value,
                 found=self.found,
                 not_found=self.not_found,
+                instance=instance,
             )
+            return obj
 
         def documentation(self):
             """Returns a documentation string for this object"""
@@ -991,7 +951,102 @@ class Info:
                 doc = "\n" + indent(dedent(self.doc), " " * 4)
             else:
                 doc = ""
-            return f"{self.attr}[{self.value}]: r'{self.regex.pattern}'{doc}"
+            return f"{self.name}[{self.value}]: r'{self.searcher.pattern}'{doc}"
+
+    class _Info:
+        """The actual .info object that will attached to the instance.
+
+        As of now this is problematic to document.
+        We should figure out a way to do that.
+        """
+
+        def __init__(self, instance):
+            # attach this info instance to the instance
+            self._instance = instance
+            self._attrs = []
+            self._properties = []
+            self._searching = False
+
+            # add the properties
+            for prop in instance._info_attributes_:
+                if isinstance(prop, dict):
+                    prop = instance.InfoAttr(instance=instance, **prop)
+                elif isinstance(prop, (tuple, list)):
+                    prop = instance.InfoAttr(*prop, instance=instance)
+                else:
+                    prop = prop.copy(instance=instance)
+                self.add_property(prop)
+
+            # Patch the readline of the instance
+            def patch(info):
+                # grab the function to be patched
+                properties = info._properties
+                func = info._instance.readline
+
+                @wraps(func)
+                def readline(*args, **kwargs):
+                    line = func(*args, **kwargs)
+                    for prop in properties:
+                        prop.process(info._instance, line)
+                    return line
+
+                return readline
+
+            if len(self) > 0:
+                self._instance.readline = patch(self)
+
+        def add_property(self, prop: InfoAttr) -> None:
+            """Add a new property to be reachable from the .info"""
+            self._attrs.append(prop.name)
+            self._properties.append(prop)
+
+        def get_property(self, prop: str) -> None:
+            """Add a new property to be reachable from the .info"""
+            if prop not in self._attrs:
+                inst = self._instance
+                raise AttributeError(
+                    f"{inst.__class__.__name__}.info.{prop} does not exist, did you mistype?"
+                )
+
+            idx = self._attrs.index(prop)
+            return self._properties[idx]
+
+        def __str__(self):
+            """Return a string of the contained attributes, with the values they currently contain"""
+            return "\n".join([p.documentation() for p in self._properties])
+
+        def __len__(self) -> int:
+            return len(self._properties)
+
+        def __getattr__(self, attr):
+            """Overwrite the attribute retrieval to be able to fetch the actual values from the information"""
+            inst = self._instance
+            prop = self.get_property(attr)
+
+            if prop.found or self._searching:
+                # only when hitting the new line will this change...
+                return prop.value
+
+            # we need to parse the rest of the file
+            # This is not ideal, but...
+            self._searching = True
+            loc = None
+            try:
+                loc = inst.fh.tell()
+            except AttributeError:
+                pass
+            with inst:
+                line = inst.readline()
+                while not (prop.found or line == ""):
+                    line = inst.readline()
+            if loc is not None:
+                inst.fh.seek(loc)
+
+            if not prop.found:
+                prop.not_found(inst, prop)
+
+            self._searching = False
+            return prop.value
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1144,7 +1199,7 @@ class Sile(Info, BaseSile):
             yield l
             l = self.readline(comment=True)
 
-    def readline(self, comment=False):
+    def readline(self, comment: bool = False) -> str:
         r"""Reads the next line of the file"""
         l = self.fh.readline()
         self._line += 1
@@ -1243,21 +1298,19 @@ class Sile(Info, BaseSile):
 # Instead of importing netCDF4 on each invocation
 # of the __enter__ functioon (below), we make
 # a pass around it
-netCDF4 = None
+if has_module("netCDF4"):
+    import netCDF4
+else:
 
-
-def _import_netCDF4():
-    global netCDF4
-    if netCDF4 is None:
-        try:
-            import netCDF4
-        except ImportError as e:
-            # append
+    class _mock_netCDF4:
+        def __getattr__(self, attr):
             import sys
 
             exe = Path(sys.executable).name
             msg = f"Could not import netCDF4. Please install it using '{exe} -m pip install netCDF4'"
-            raise SileError(msg) from e
+            raise SileError(msg)
+
+    netCDF4 = _mock_netCDF4()
 
 
 @set_module("sisl.io")
@@ -1276,8 +1329,6 @@ class SileCDF(BaseSile):
     """
 
     def __init__(self, filename, mode="r", lvl=0, access=1, *args, **kwargs):
-        _import_netCDF4()
-
         self._file = Path(filename)
         # Open mode
         self._mode = mode

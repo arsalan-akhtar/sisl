@@ -1,7 +1,7 @@
 .. _install:
 
-Installation
-============
+Detailed instructions
+=====================
 
 sisl is easy to install using any of your preferred methods.
 
@@ -71,10 +71,11 @@ using :code:`pip` or :code:`conda` methods:
 
    .. code-block:: bash
 
-      python3 -m pip install setuptools_scm "scikit-build-core[pyproject]" Cython
-      python3 -m pip install git+https://github.com/zerothi/sisl.git --prefix <prefix>
+      python3 -m pip install git+https://github.com/zerothi/sisl.git
 
    The remaining dependencies should automatically be installed.
+
+   Consider whether the *editable* install is more appropriate for your workflow.
 
 .. tab:: dev|conda
 
@@ -90,12 +91,15 @@ using :code:`pip` or :code:`conda` methods:
       conda install -c conda-forge fortran-compiler c-compiler python scikit-build-core pyproject-metadata
       conda install -c conda-forge cython scipy netcdf4 cftime plotly matplotlib
 
-   subsequent installations of sisl should follow :code:`dev|pip` tab
+   subsequent installations of sisl should follow :code:`dev|pip` tab.
+
+   Consider whether the *editable* install is more appropriate for your workflow.
 
 .. tab:: editable|pip
 
-   Editable installs are currently not fully supported by :code:`scikit-build-core` and
-   is considered experimental. One *may* get it to work by doing:
+   Editable installs allows one to easily use pure Python code changes
+   without having to reinstall all the time. Highly recommended for developers, has the
+   same requirements as noted in the `dev|*` tabs.
 
    .. code-block:: bash
 
@@ -113,15 +117,11 @@ Windows
    to get sisl up and running on Windows would be greatly appreciated.
    Please help us out by opening an `issue`_.
 
-To install `sisl` on Windows one will require a specification of
-the compilers used. Typically one may do
-
-.. code-block:: bash
-
-   python3 -m pip install . --prefix=<prefix>
-
-but sometimes ``setuptools`` does not intercept the flags in the build process.
-Since 3.12 ``distutils`` has been deprecated and one needs to pass explicit linker flags to the CMake environment.
+The installation process should be equivalent to the other OS's. However,
+one will likely be required to adapt the C and Fortran compiler for
+the Windows platform.
+These needs to be passed through the CMake environment (see
+:ref:`install-compile-options`).
 
 
 .. _installation-testing:
@@ -141,16 +141,19 @@ Testing the installation may be done by:
    pytest --pyargs sisl
 
 The above will run the default test-suite which covers most of `sisl`.
-Additional tests may be runned by cloning the `sisl-files <sisl-files_>`_
-and setting the environment variable `SISL_FILES_TESTS` as the ``tests`` path to the repository.
+Additional tests may be runned by cloning the `stripped` branch of
+`sisl-files <sisl-files_>`_
+and setting the environment variable `SISL_FILES_TESTS` to the path of the cloned repository.
 
 A basic procedure would be:
 
 .. code-block:: bash
 
    git clone https://github.com/zerothi/sisl-files.git
-   SISL_FILES_TESTS=$(pwd)/sisl-files/tests pytest --pyargs sisl
+   SISL_FILES_TESTS=$(pwd)/sisl-files pytest --pyargs sisl
 
+
+.. _install-compile-options:
 
 Compile time options
 --------------------

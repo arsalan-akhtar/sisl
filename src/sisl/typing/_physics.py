@@ -3,8 +3,52 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Callable, Literal, Union
 
-__all__ = ["GaugeType"]
+import numpy as np
+import numpy.typing as npt
 
-GaugeType = Literal["cell", "orbital"]
+from ._common import SparseMatrixGeometry
+
+if TYPE_CHECKING:
+    from sisl.physics import SparseOrbitalBZ, SparseOrbitalBZSpin
+
+__all__ = [
+    "GaugeType",
+    "ProjectionType",
+    "ProjectionTypeTrace",
+    "ProjectionTypeDiag",
+    "ProjectionTypeMatrix",
+    "ProjectionTypeHadamard",
+    "ProjectionTypeHadamardAtoms",
+    "DistributionFunc",
+    "DistributionStr",
+    "DistributionType",
+    "SparseMatrixPhysical",
+]
+
+GaugeType = Literal["lattice", "atomic"]
+
+ProjectionTypeMatrix = Literal["matrix", "ij"]
+ProjectionTypeTrace = Literal["trace", "sum"]
+ProjectionTypeDiag = Literal["diagonal", "diag", "ii"]
+ProjectionTypeHadamard = Literal["hadamard", "basis"]
+ProjectionTypeHadamardAtoms = Literal["hadamard:atoms", "atoms"]
+ProjectionType = Union[ProjectionTypeMatrix, ProjectionTypeDiag, ProjectionTypeTrace]
+
+# The distribution method, can be a string, or a Callable
+DistributionFunc = Callable[[npt.ArrayLike], np.ndarray]
+DistributionStr = Literal[
+    "gaussian",
+    "lorentzian",
+    "fermi",
+    "bose-einstein",
+    "cold",
+    "step-function",
+    "heaviside",
+]
+DistributionType = Union[DistributionStr, DistributionFunc]
+
+SparseMatrixPhysical = Union[
+    SparseMatrixGeometry, "SparseOrbitalBZ", "SparseOrbitalBZSpin"
+]
